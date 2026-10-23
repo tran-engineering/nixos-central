@@ -7,7 +7,13 @@ repository automatically.
 ## Install
 
 1. Download the [NixOS installation image](https://nixos.org/download/#nixos-iso)
-   (graphical or minimal) and write it to a USB stick.
+   (graphical or minimal) and write it to a USB stick. On Linux, this downloads
+   the minimal image for 64-bit PCs and writes it in one go; replace `/dev/sdX`
+   with the USB stick (find it with `lsblk`). Everything on the stick is erased.
+
+   ```sh
+   curl -L https://channels.nixos.org/nixos-26.05/latest-nixos-minimal-x86_64-linux.iso | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
+   ```
 2. Boot the computer from the USB stick **in UEFI mode**.
 3. Connect to the network. Cable works out of the box; for Wi-Fi run `nmtui`
    (graphical image: use the network applet; minimal image: `nmtui` or `nmcli`).
