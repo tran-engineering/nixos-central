@@ -1,12 +1,13 @@
 # End-to-end installer test in QEMU (UEFI, KVM, internet access required).
 #
-#   nix run --impure -f tests/e2e
+#   nix run --impure -f nixos-central-internal/tests/e2e
 #
 # Boots a NixOS minimal installer image (plus serial console), installs via
-# installer/install.sh against a local git copy of this repo, reboots into the
-# installed system and exercises updates and nixos-central-try.
+# nixos-central-internal/installer/install.sh against a local git copy of this
+# repo, reboots into the installed system and exercises updates and
+# nixos-central-try.
 let
-  flake = builtins.getFlake (toString ../..);
+  flake = builtins.getFlake (toString ../../..);
   inherit (flake.inputs) nixpkgs;
   pkgs = nixpkgs.legacyPackages.x86_64-linux;
 
@@ -32,7 +33,7 @@ pkgs.writeShellApplication {
   ];
   text = ''
     exec python3 ${./run.py} \
-      --repo "${toString ../..}" \
+      --repo "${toString ../../..}" \
       --iso "$(echo ${iso}/iso/*.iso)" \
       --ovmf "${pkgs.OVMF.fd}/FV" \
       "$@"

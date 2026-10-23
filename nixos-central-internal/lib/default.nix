@@ -17,11 +17,11 @@ let
     [
       disko.nixosModules.disko
       home-manager.nixosModules.home-manager
-      ../modules/options.nix
+      ../../modules/options.nix
       ../disko
-      ../modules/base
-      ../modules/desktops.nix
-      ../modules/user.nix
+      ../../modules/base
+      ../../modules/desktops.nix
+      ../../modules/user.nix
       {
         nixpkgs.hostPlatform = system;
         system.stateVersion = stateVersion;

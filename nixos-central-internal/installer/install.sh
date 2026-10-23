@@ -19,7 +19,7 @@ init_globals() {
   CENTRAL="${NIXOS_CENTRAL_FLAKE:-github:tran-engineering/nixos-central}"
   LOG=/tmp/nixos-central-install.log
   WORK=/tmp/nixos-central/etc-nixos
-  LUKS_KEY=/tmp/nixos-central-luks.key # must match disko/default.nix
+  LUKS_KEY=/tmp/nixos-central-luks.key # must match nixos-central-internal/disko/default.nix
   MIN_DISK_BYTES=$((40 * 1024 * 1024 * 1024))
   RESERVED_USERS=" root bin daemon nobody nogroup nixbld messagebus polkituser sddm sshd systemd-network
     systemd-resolve systemd-timesync systemd-oom systemd-coredump rtkit avahi geoclue pipewire
