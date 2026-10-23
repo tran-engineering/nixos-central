@@ -167,8 +167,8 @@ open a pull request when happy.
 ```sh
 nix flake check                       # evaluates and builds sample hosts, runs VM tests
 nix build .#checks.x86_64-linux.shells
-nix run --impure -f tests/e2e         # full installer test in QEMU (needs KVM + internet)
-shellcheck installer/install.sh
+nix run --impure -f nixos-central-internal/tests/e2e   # full installer test in QEMU (needs KVM + internet)
+shellcheck nixos-central-internal/installer/install.sh
 ```
 
 Sample hosts used in CI: `ci-kde`, `ci-none`, `ci-default-profile`

@@ -18,7 +18,7 @@
     let
       systems = [ "x86_64-linux" ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
-      centralLib = import ./lib { inherit inputs; };
+      centralLib = import ./nixos-central-internal/lib { inherit inputs; };
 
       # Sample machines, built in CI. Not meant to be installed.
       ciHost =
@@ -29,7 +29,7 @@
             user = "ci-user";
             disk = "/dev/vda";
             stateVersion = centralLib.release;
-            modules = [ ./tests/ci-hardware.nix ];
+            modules = [ ./nixos-central-internal/tests/ci-hardware.nix ];
           }
           // args
         );
@@ -40,7 +40,7 @@
 
       # Copied to /etc/nixos by the installer.
       templates.host = {
-        path = ./templates/host;
+        path = ./nixos-central-internal/templates/host;
         description = "Machine flake for a nixos-central host";
       };
 
@@ -57,7 +57,7 @@
         # Used by the installer: nix run github:tran-engineering/nixos-central#disko
         inherit (disko.packages.${system}) disko;
         installer = nixpkgs.legacyPackages.${system}.writeShellScriptBin "nixos-central-install" (
-          builtins.readFile ./installer/install.sh
+          builtins.readFile ./nixos-central-internal/installer/install.sh
         );
       });
 
@@ -66,7 +66,7 @@
         nixpkgs.lib.mapAttrs' (
           name: host: nixpkgs.lib.nameValuePair "host-${name}" host.config.system.build.toplevel
         ) (nixpkgs.lib.filterAttrs (_: host: host.pkgs.stdenv.hostPlatform.system == system) self.nixosConfigurations)
-        // import ./tests { inherit inputs system; }
+        // import ./nixos-central-internal/tests { inherit inputs system; }
       );
     };
 }

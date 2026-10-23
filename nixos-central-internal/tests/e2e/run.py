@@ -65,7 +65,10 @@ class Repo:
                 f"exec {shutil.which('git')} http-backend\n"
             )
         os.chmod(cgi, 0o755)
-        shutil.copy(os.path.join(src, "installer", "install.sh"), os.path.join(self.www, "install.sh"))
+        shutil.copy(
+            os.path.join(src, "nixos-central-internal", "installer", "install.sh"),
+            os.path.join(self.www, "install.sh"),
+        )
 
     def git(self, *args):
         subprocess.run(["git", "-C", self.work, "-c", "user.name=e2e", "-c", "user.email=e2e@test", *args], check=True)

@@ -1,7 +1,7 @@
 # Machine facts, set by lib.mkHost from the machine's /etc/nixos/flake.nix.
 { lib, ... }:
 let
-  desktopNames = import ../lib/desktop-names.nix;
+  desktopNames = import ../nixos-central-internal/lib/desktop-names.nix;
 in
 {
   options.nixos-central = {
