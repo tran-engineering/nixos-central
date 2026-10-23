@@ -109,7 +109,9 @@ check_flags() {
 }
 
 require_tty() {
-  [ -r /dev/tty ] && [ -w /dev/tty ] || die "No terminal available for questions. Pass all values as options (see --help)."
+  if ! { [ -r /dev/tty ] && [ -w /dev/tty ]; }; then
+    die "No terminal available for questions. Pass all values as options (see --help)."
+  fi
 }
 
 # ask VAR "question" [default]
@@ -231,10 +233,10 @@ list_disks() { lsblk -do PATH,SIZE,TYPE,TRAN,MODEL >&2; }
 select_disk() {
   heading "Disk"
   if [ "$DISK_FLAG" = 1 ]; then
-    [ -b "$DISK" ] && [ "$(lsblk -dno TYPE "$DISK")" = disk ] || {
+    if ! { [ -b "$DISK" ] && [ "$(lsblk -dno TYPE "$DISK")" = disk ]; }; then
       list_disks
       die "'$DISK' is not a disk."
-    }
+    fi
     return
   fi
 
@@ -242,7 +244,7 @@ select_disk() {
   boot=$(boot_disk)
   # Columns without a value (e.g. TRAN of virtio disks) must come last.
   while read -r path size type rm ro tran; do
-    [ "$type" = disk ] && [ "$rm" = 0 ] && [ "$ro" = 0 ] || continue
+    if [ "$type" != disk ] || [ "$rm" != 0 ] || [ "$ro" != 0 ]; then continue; fi
     [ "$tran" != usb ] || continue
     [ "$path" != "$boot" ] || continue
     [ "$size" -ge "$MIN_DISK_BYTES" ] || continue
