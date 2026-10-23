@@ -46,13 +46,13 @@ Scope assumption: first release ships desktops `kde` and `none`; further desktop
 ## 6. Publishing and CI
 
 - [x] 6.1 Add GitHub Actions workflow publishing `installer/install.sh` as `index.html` to GitHub Pages on the default branch; verify `curl -sL https://tran-engineering.github.io/nixos-central | head` returns the script and `http://` also works with `-L`
-- [ ] 6.2 Add CI on PRs: `nix flake check`, `shellcheck installer/install.sh`, build `ci-kde` and `ci-none` toplevels; verify a PR run passes
+- [x] 6.2 Add CI on PRs: `nix flake check`, `shellcheck installer/install.sh`, build `ci-kde` and `ci-none` toplevels; verify a PR run passes
 - [ ] 6.3 Add scheduled workflow bumping the central `flake.lock` weekly via PR; verify it opens a PR on manual dispatch
 
 ## 7. Integration
 
 - [ ] 7.1 Full flow in QEMU from stock NixOS ISO using the published URL with no flags: install, reboot, then merge a profile `users/<user>` on a branch, run `nixos-central-try <branch>`, reboot (reverts), merge, trigger auto-upgrade, receive notification, reboot into new profile; verify each spec scenario observed
-- [ ] 7.2 Install one real machine via the published URL; verify boot, login, Wi-Fi, and first auto-upgrade
+- [x] 7.2 Install one real machine via the published URL; verify boot, login, Wi-Fi, and first auto-upgrade
 
 ## Workflow follow-up
 
