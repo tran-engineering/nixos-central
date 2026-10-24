@@ -7,15 +7,5 @@
       enable = true;
       wayland.enable = true;
     };
-
-    services.pipewire = {
-      enable = true;
-      alsa.enable = true;
-      pulse.enable = true;
-    };
-    security.rtkit.enable = true;
-
-    hardware.bluetooth.enable = true;
-    services.printing.enable = true;
   };
 }

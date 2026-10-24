@@ -108,11 +108,33 @@ To change the desktop later, edit `desktop` in `/etc/nixos/flake.nix` and run
 
 | Name | Desktop |
 |---|---|
+| `gnome` | GNOME (Wayland, GDM) |
 | `kde` | KDE Plasma 6 (Wayland, SDDM) |
+| `niri-noctalia` | [niri](https://github.com/YaLTeR/niri) tiling compositor with the [Noctalia](https://github.com/noctalia-dev/noctalia-shell) shell (Wayland, SDDM) |
 | `none` | no graphical desktop, console login |
 
+On `niri-noctalia`, the main keys are:
+
+| Key | Action |
+|---|---|
+| `Mod+Shift+/` | show all keybindings |
+| `Mod+D` | application launcher |
+| `Mod+T` | terminal (Alacritty) |
+| `Mod+Q` | close window |
+| `Super+Alt+L` | lock screen |
+| `Mod+X` | session menu (log out, reboot, shut down) |
+
+`Mod` is the Super ("Windows") key. The config is
+`modules/desktops/niri-noctalia/config.kdl`, installed as `/etc/niri/config.kdl`.
+To use your own, add it to your profile; Noctalia still starts:
+
+```nix
+xdg.configFile."niri/config.kdl".source = ./niri.kdl;
+```
+
 A new desktop is a new file `modules/desktops/<name>.nix`, enabled with
-`lib.mkIf (config.nixos-central.desktop == "<name>")`.
+`lib.mkIf (config.nixos-central.desktop == "<name>")`. Sound, Bluetooth and
+printing for every graphical desktop come from `modules/base/graphical.nix`.
 
 ## Users and profiles
 
@@ -134,6 +156,14 @@ default; to build on it, import it:
   home.packages = [ pkgs.gimp ];
   home.sessionVariables.EDITOR = lib.mkForce "nano";
 }
+```
+
+Newer versions of single packages come from `nixos-unstable` as
+`pkgs.unstable.<name>` (unfree allowed, as for the stable packages). Everything
+not taken from `pkgs.unstable` stays on the system's NixOS release:
+
+```nix
+home.packages = [ pkgs.unstable.helix ];
 ```
 
 Permanent changes go through a pull request to this repository. To try a
@@ -184,5 +214,5 @@ nix run --impure -f nixos-central-internal/tests/e2e   # full installer test in 
 shellcheck nixos-central-internal/installer/install.sh
 ```
 
-Sample hosts used in CI: `ci-kde`, `ci-none`, `ci-default-profile`
+Sample hosts used in CI: `ci-gnome`, `ci-kde`, `ci-niri-noctalia`, `ci-none`, `ci-default-profile`
 (`nixosConfigurations`, not meant to be installed).

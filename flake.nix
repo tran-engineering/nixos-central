@@ -3,6 +3,8 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
+    # Newer packages: pkgs.unstable.<name>; niri and Noctalia on niri-noctalia machines.
+    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
     home-manager = {
       url = "github:nix-community/home-manager/release-26.05";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -46,6 +48,8 @@
 
       nixosConfigurations = {
         ci-kde = ciHost "ci-kde" { desktop = "kde"; };
+        ci-gnome = ciHost "ci-gnome" { desktop = "gnome"; };
+        ci-niri-noctalia = ciHost "ci-niri-noctalia" { desktop = "niri-noctalia"; };
         ci-none = ciHost "ci-none" { desktop = "none"; };
         ci-default-profile = ciHost "ci-default-profile" {
           desktop = "none";

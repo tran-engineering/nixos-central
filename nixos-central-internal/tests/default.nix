@@ -39,6 +39,73 @@ let
       node.pkgsReadOnly = false;
       node.specialArgs = { inherit inputs; };
     };
+  # A staged generation produces exactly one desktop notification per
+  # generation, on the given graphical desktop. `node` and `extraScript` add
+  # desktop-specific configuration and checks.
+  rebootNotify =
+    {
+      desktop,
+      node ? { },
+      extraScript ? "",
+    }:
+    runTest {
+      name = "nixos-central-reboot-notify-${desktop}";
+      nodes.machine =
+        { pkgs, ... }:
+        {
+          imports = [
+            (testHost { inherit desktop; })
+            node
+          ];
+          services.displayManager.autoLogin = {
+            enable = true;
+            user = "alice";
+          };
+          virtualisation.memorySize = 4096;
+          virtualisation.cores = 2;
+          virtualisation.additionalPaths = [ (pkgs.writeTextDir "fake-system" "staged") ];
+        };
+      testScript =
+        { nodes, ... }:
+        let
+          fake = nodes.machine.virtualisation.additionalPaths;
+        in
+        ''
+          user = "systemctl --user -M alice@"
+          unit = "nixos-central-reboot-notify"
+          def notifications():
+              return int(machine.succeed(f"journalctl _SYSTEMD_USER_UNIT={unit}.service | grep -c 'notified about' || true").strip())
+
+          # Test VMs boot without a system profile; start from a regular installed state.
+          machine.succeed("nix-env -p /nix/var/nix/profiles/system --set $(readlink -f /run/booted-system)")
+          machine.wait_until_succeeds(f"{user} is-active graphical-session.target", timeout=900)
+          machine.wait_until_succeeds(f"{user} is-active {unit}.timer")
+          # notify-send needs the desktop's notification server on alice's session bus
+          machine.wait_until_succeeds(
+              "busctl --user -M alice@ call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus"
+              " NameHasOwner s org.freedesktop.Notifications | grep -qx 'b true'",
+              timeout=900,
+          )
+          machine.sleep(30)
+
+          with subtest("no notification without a staged update"):
+              machine.succeed(f"{user} start {unit}.service")
+              assert notifications() == 0
+
+          with subtest("staged update notifies once"):
+              machine.succeed("nix-env -p /nix/var/nix/profiles/system --set ${builtins.head fake}")
+              machine.succeed(f"{user} start {unit}.service")
+              machine.succeed(f"{user} start {unit}.service")
+              assert notifications() == 1, f"expected 1 notification, got {notifications()}"
+
+          with subtest("after reboot into the staged generation: no notification"):
+              machine.succeed("nix-env -p /nix/var/nix/profiles/system --set $(readlink -f /run/booted-system)")
+              machine.succeed(f"{user} start {unit}.service")
+              assert notifications() == 1
+
+          ${extraScript}
+        '';
+    };
 in
 {
   # nix-shell -p / nix shell nixpkgs#... resolve to the system's pinned nixpkgs, offline.
@@ -115,54 +182,6 @@ in
     '';
   };
 
-  # A staged generation produces exactly one desktop notification per generation.
-  reboot-notify = runTest {
-    name = "nixos-central-reboot-notify";
-    nodes.machine =
-      { pkgs, ... }:
-      {
-        imports = [ (testHost { desktop = "kde"; }) ];
-        services.displayManager.autoLogin = {
-          enable = true;
-          user = "alice";
-        };
-        virtualisation.memorySize = 4096;
-        virtualisation.cores = 2;
-        virtualisation.additionalPaths = [ (pkgs.writeTextDir "fake-system" "staged") ];
-      };
-    testScript =
-      { nodes, ... }:
-      let
-        fake = nodes.machine.virtualisation.additionalPaths;
-      in
-      ''
-        user = "systemctl --user -M alice@"
-        unit = "nixos-central-reboot-notify"
-        def notifications():
-            return int(machine.succeed(f"journalctl _SYSTEMD_USER_UNIT={unit}.service | grep -c 'notified about' || true").strip())
-
-        # Test VMs boot without a system profile; start from a regular installed state.
-        machine.succeed("nix-env -p /nix/var/nix/profiles/system --set $(readlink -f /run/booted-system)")
-        machine.wait_until_succeeds(f"{user} is-active graphical-session.target", timeout=900)
-        machine.wait_until_succeeds(f"{user} is-active {unit}.timer")
-        # notify-send needs Plasma's notification server
-        machine.wait_until_succeeds("pgrep -u alice -f plasmashell", timeout=900)
-        machine.sleep(30)
-
-        with subtest("no notification without a staged update"):
-            machine.succeed(f"{user} start {unit}.service")
-            assert notifications() == 0
-
-        with subtest("staged update notifies once"):
-            machine.succeed("nix-env -p /nix/var/nix/profiles/system --set ${builtins.head fake}")
-            machine.succeed(f"{user} start {unit}.service")
-            machine.succeed(f"{user} start {unit}.service")
-            assert notifications() == 1, f"expected 1 notification, got {notifications()}"
-
-        with subtest("after reboot into the staged generation: no notification"):
-            machine.succeed("nix-env -p /nix/var/nix/profiles/system --set $(readlink -f /run/booted-system)")
-            machine.succeed(f"{user} start {unit}.service")
-            assert notifications() == 1
-      '';
-  };
+  reboot-notify-kde = rebootNotify { desktop = "kde"; };
+  reboot-notify-gnome = rebootNotify { desktop = "gnome"; };
 }

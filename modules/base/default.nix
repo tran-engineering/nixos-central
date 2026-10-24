@@ -6,6 +6,8 @@
     ./reboot-notify.nix
     ./try.nix
     ./upgrade.nix
+    ./unstable.nix
+    ./graphical.nix
   ];
 
   boot.loader.systemd-boot = {
