@@ -154,8 +154,15 @@ These use the same nixpkgs version as the installed system.
   the next boot**. The running system is not changed and the computer is never
   rebooted automatically.
 - Desktop users get a notification *"Update ready – reboot when convenient"*.
-- If an update is broken, choose the previous entry in the boot menu.
-- Run an update right away: `sudo systemctl start nixos-upgrade`.
+- If an update is broken, choose the previous entry in the boot menu, or go
+  back to the previous generation right away with
+  `sudo nixos-rebuild switch --rollback`.
+- Stage the latest update for the next boot right away (like the daily run):
+  `sudo systemctl start nixos-upgrade`.
+- Install the latest update **and use it now**: `nixos-central-upgrade`. It
+  also becomes the default for the next boot. Switching may restart services
+  (and the desktop), so save your work first. A new kernel is used only after
+  the next reboot; the command says so when that applies.
 
 ### Trying a branch
 

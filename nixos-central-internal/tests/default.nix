@@ -63,6 +63,58 @@ in
     '';
   };
 
+  # nixos-central-upgrade changes nothing when it fails or an auto-upgrade runs.
+  upgrade-failures = runTest {
+    name = "nixos-central-upgrade-failures";
+    nodes.machine =
+      { lib, pkgs, ... }:
+      {
+        imports = [ (testHost { desktop = "none"; }) ];
+        virtualisation.memorySize = 2048;
+        environment.systemPackages = [ pkgs.git ];
+        # Stands in for a long-running automatic upgrade.
+        systemd.services.nixos-upgrade.script = lib.mkForce "sleep infinity";
+      };
+    testScript = ''
+      git = "git -c user.name=t -c user.email=t@t -C /tmp/central"
+      def state():
+          return machine.succeed("md5sum /etc/nixos/flake.lock; readlink /nix/var/nix/profiles/system")
+
+      machine.wait_for_unit("multi-user.target")
+      # The persistent timer may already have started the stand-in at boot.
+      machine.succeed("systemctl stop nixos-upgrade.timer nixos-upgrade.service")
+      # Test VMs boot without a system profile; start from a regular installed state.
+      machine.succeed("nix-env -p /nix/var/nix/profiles/system --set $(readlink -f /run/booted-system)")
+
+      # A machine flake whose central input is a local repo with a broken mkHost.
+      machine.succeed(
+          "mkdir -p /tmp/central /etc/nixos",
+          "echo '{ outputs = _: { lib.mkHost = _: throw \"broken central\"; }; }' > /tmp/central/flake.nix",
+          f"{git} init -q && {git} add . && {git} commit -qm one",
+          "echo '{ inputs.central.url = \"git+file:///tmp/central\"; outputs = { central, ... }: { nixosConfigurations.machine = central.lib.mkHost { }; }; }' > /etc/nixos/flake.nix",
+          "nix flake lock /etc/nixos",
+      )
+
+      with subtest("build failure after a central update leaves lock and profile unchanged"):
+          machine.succeed(f"echo '# two' >> /tmp/central/flake.nix && {git} commit -qam two")
+          before = state()
+          out = machine.fail("nixos-central-upgrade 2>&1")
+          # nix wrote the bumped lock before failing; the command must have restored it.
+          assert "Updated input 'central'" in out, out
+          assert "broken central" in out and "nothing was changed" in out, out
+          assert state() == before, f"{before} != {state()}"
+
+      with subtest("refuses while the automatic upgrade runs"):
+          machine.succeed("systemctl start --no-block nixos-upgrade.service")
+          machine.wait_until_succeeds("systemctl show -P ActiveState nixos-upgrade.service | grep -qx activating", timeout=30)
+          before = state()
+          out = machine.fail("nixos-central-upgrade 2>&1")
+          assert "automatic upgrade is running" in out, out
+          assert state() == before
+          machine.succeed("systemctl stop nixos-upgrade.service")
+    '';
+  };
+
   # A staged generation produces exactly one desktop notification per generation.
   reboot-notify = runTest {
     name = "nixos-central-reboot-notify";

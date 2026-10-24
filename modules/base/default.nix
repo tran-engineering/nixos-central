@@ -5,6 +5,7 @@
     ./auto-upgrade.nix
     ./reboot-notify.nix
     ./try.nix
+    ./upgrade.nix
   ];
 
   boot.loader.systemd-boot = {

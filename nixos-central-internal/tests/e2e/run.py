@@ -385,6 +385,42 @@ def phase_installed(args, repo):
     check(rc != 0, "try change gone after reboot")
     check(vm.succeed("readlink -f /run/booted-system").split()[-1] == staged, "booted the staged generation")
     check("nano" in vm.succeed("bash -lc 'echo $EDITOR'"), "personal profile users/alice active")
+
+    log("nixos-central-upgrade: latest main active right away and after reboot, ends a tried branch")
+    vm.send("sudo -k")
+    vm.expect(SHELL_PROMPT)
+    vm.send("nixos-central-try alice-wip; echo __TRY$?")
+    vm.answer(r"\[sudo\] password for alice: ", PASSWORD)
+    vm.expect(r"__TRY(\d+)", 3600)
+    check(vm.p.match.group(1) == "0", "nixos-central-try alice-wip succeeded")
+    vm.expect(SHELL_PROMPT)
+    repo.write("users/alice/default.nix", '{ lib, ... }: {\n  imports = [ ../_default ];\n  home.sessionVariables.EDITOR = lib.mkForce "nano";\n  home.file.upgrade-marker.text = "upgraded";\n}\n')
+    repo.commit("alice: upgrade marker")
+    repo.git("push", "-q", "origin", "main")
+    before = vm.succeed("md5sum /etc/nixos/flake.lock").split() + [boot_entries(vm)]
+    vm.send("sudo -k")
+    vm.expect(SHELL_PROMPT)
+    vm.send("nixos-central-upgrade; echo __UP$?")
+    vm.answer(r"\[sudo\] password for alice: ", PASSWORD)
+    vm.expect(r"__UP(\d+)", 3600)
+    out, rc = vm.p.before, vm.p.match.group(1)
+    check(rc == "0", "nixos-central-upgrade succeeded")
+    check("new kernel" not in out, "no kernel hint when the kernel did not change")
+    vm.expect(SHELL_PROMPT)
+    check("upgraded" in vm.succeed("cat ~/upgrade-marker"), "upgrade active immediately")
+    rc, _ = vm.run("test -e ~/try-marker")
+    check(rc != 0, "tried branch replaced by main")
+    after = vm.succeed("md5sum /etc/nixos/flake.lock").split() + [boot_entries(vm)]
+    check(before[0] != after[0], "flake.lock updated (central bumped)")
+    check(after[-1] == before[-1] + 1, f"new boot entry added ({before[-1]} -> {after[-1]})")
+    switched = vm.succeed("readlink -f /nix/var/nix/profiles/system").split()[-1]
+    check(vm.succeed("readlink -f /run/current-system").split()[-1] == switched, "default boot entry is the running system")
+    vm.poweroff()
+
+    log("reboot: upgrade persists")
+    vm = boot_installed(args)
+    check("upgraded" in vm.succeed("cat ~/upgrade-marker"), "upgrade still active after reboot")
+    check(vm.succeed("readlink -f /run/booted-system").split()[-1] == switched, "booted the upgraded generation")
     vm.poweroff()
 
 

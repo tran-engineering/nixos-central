@@ -5,10 +5,7 @@
   system.autoUpgrade = {
     enable = true;
     flake = "/etc/nixos";
-    flags = [
-      "--update-input"
-      "central"
-    ];
+    flags = import ./central-update-flags.nix;
     upgrade = false; # channels only; we have none
     operation = "boot";
     allowReboot = false;
