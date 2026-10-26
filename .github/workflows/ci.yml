@@ -27,7 +27,7 @@ jobs:
 
       - name: Install a standalone home
         env:
-          NIXOS_CENTRAL_FLAKE: git+file://${{ github.workspace }}
+          NIXOS_CENTRAL_FLAKE: git+file://${{ github.workspace }}?shallow=1 # checkout is a shallow clone
         run: |
           echo '# pre-existing' >> ~/.bashrc
           bash nixos-central-internal/installer/home-only.sh --profile _default --install-nix --no-gpu-setup
