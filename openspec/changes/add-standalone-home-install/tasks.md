@@ -31,7 +31,7 @@
 ## 5. Publishing and CI
 
 - [x] 5.1 Add VM test `home-installer-refuses-nixos` to `nixos-central-internal/tests` (D8); verify with `nix build .#checks.x86_64-linux.home-installer-refuses-nixos`
-- [ ] 5.2 Update `.github/workflows/pages.yml` to publish `site/home-only.sh` and trigger on its path; verify after merge that `curl -sL https://tran-engineering.github.io/nixos-central/home-only.sh` returns the script and `/` still serves `install.sh`
+- [x] 5.2 Update `.github/workflows/pages.yml` to publish `site/home-only.sh` and trigger on its path; verify after merge that `curl -sL https://tran-engineering.github.io/nixos-central/home-only.sh` returns the script and `/` still serves `install.sh`
 - [x] 5.3 Add CI job `home-installer` on `ubuntu-latest` without preinstalled Nix (shellcheck, pre-seeded `~/.bashrc`, unattended run against `git+file://$GITHUB_WORKSPACE` with `--profile ci-user --install-nix --no-gpu-setup`, assertions from D8, root refusal) and shellcheck `home-only.sh` in the existing `installer` job; verify the job passes on the PR
 
 ## 6. Integration check

@@ -29,3 +29,4 @@ Decisions from the user: niri uses SDDM; niri and Noctalia come from stable nixo
 
 - [x] 4.1 Run `nix flake check -L` and verify all checks pass (sample hosts for all four desktops, all VM tests)
 - [x] 4.2 Verify the installer offers all four desktops without a hard-coded list: `nix eval --raw .#lib --apply 'l: toString l.desktopNames'` prints `gnome kde niri-noctalia none` (in some order) and `grep -n desktopNames nixos-central-internal/installer/install.sh` shows the installer reads that value (the e2e test stays on `none`, as it has no graphics)
+- [x] 4.3 Update the QEMU installer e2e (`nixos-central-internal/tests/e2e/run.py`) to expect the desktop list derived from `modules/desktops` instead of the hard-coded `kde none`; verify `nix run --impure -f nixos-central-internal/tests/e2e` passes
