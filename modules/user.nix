@@ -1,11 +1,10 @@
 # The machine's primary user: account and home-manager profile.
-# The profile is users/<name> if the central repo has one, users/_default otherwise.
-# Checked on every build, so a profile merged later is picked up by the next update.
+# The profile is users/<name> if the central repo has one, users/_default otherwise
+# (see nixos-central-internal/lib/profiles.nix).
 { config, ... }:
 let
   inherit (config.nixos-central) user;
-  personal = ../users + "/${user}";
-  profile = if builtins.pathExists personal then personal else ../users/_default;
+  profile = ((import ../nixos-central-internal/lib/profiles.nix).resolve user).path;
 in
 {
   users.mutableUsers = false;

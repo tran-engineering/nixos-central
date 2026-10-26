@@ -11,7 +11,36 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: shellcheck
-        run: shellcheck nixos-central-internal/installer/install.sh
+        run: shellcheck nixos-central-internal/installer/install.sh nixos-central-internal/installer/home-only.sh
+
+  # home-only.sh end to end on a non-NixOS distribution (the runner's Ubuntu),
+  # starting without Nix.
+  home-installer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Refuses to run as root
+        run: |
+          if out=$(sudo bash nixos-central-internal/installer/home-only.sh 2>&1); then exit 1; fi
+          grep -q "not as root" <<<"$out"
+
+      - name: Install a standalone home
+        env:
+          NIXOS_CENTRAL_FLAKE: git+file://${{ github.workspace }}
+        run: |
+          echo '# pre-existing' >> ~/.bashrc
+          bash nixos-central-internal/installer/home-only.sh --profile _default --install-nix --no-gpu-setup
+
+      - name: Check the installed home
+        shell: bash -l {0}
+        run: |
+          set -eux
+          test "$EDITOR" = vim                                  # from users/_default
+          command -v home-manager vim
+          grep -q pre-existing ~/.bashrc.backup                 # replaced dotfile kept
+          test -f ~/.config/systemd/user/home-manager-auto-upgrade.timer
+          grep -q 'profile = "_default"' ~/.config/home-manager/flake.nix
 
   flake:
     runs-on: ubuntu-latest

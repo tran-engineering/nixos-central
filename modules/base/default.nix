@@ -23,7 +23,7 @@
     "nix-command"
     "flakes"
   ];
-  nixpkgs.config.allowUnfree = true;
+  nixpkgs.config = (import ../../nixos-central-internal/lib/nixpkgs.nix { inherit inputs; }).config;
 
   # nix-shell -p / nix shell nixpkgs#... use the nixpkgs this system was built from.
   nix.channel.enable = false;

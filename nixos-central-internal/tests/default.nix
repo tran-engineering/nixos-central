@@ -182,6 +182,26 @@ in
     '';
   };
 
+  # On an installed NixOS machine, both installers refuse before changing anything
+  # (and before asking for root).
+  home-installer-refuses-nixos = runTest {
+    name = "nixos-central-home-installer-refuses-nixos";
+    nodes.machine = {
+      imports = [ (testHost { desktop = "none"; }) ];
+    };
+    testScript = ''
+      machine.wait_for_unit("multi-user.target")
+      as_alice = "su - alice -c 'bash {} 2>&1'"
+
+      out = machine.fail(as_alice.format("${../installer/home-only.sh}"))
+      assert "This is NixOS" in out and "nixos-central-upgrade" in out, out
+      machine.fail("test -e /home/alice/.config/home-manager")
+
+      out = machine.fail(as_alice.format("${../installer/install.sh}"))
+      assert "Boot the USB image first" in out and "sudo" not in out, out
+    '';
+  };
+
   reboot-notify-kde = rebootNotify { desktop = "kde"; };
   reboot-notify-gnome = rebootNotify { desktop = "gnome"; };
 }

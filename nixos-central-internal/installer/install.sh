@@ -194,15 +194,25 @@ ensure_root() {
     bash -c "$(declare -f); main \"\$@\"" nixos-central-install "$@"
 }
 
-preflight() {
-  heading "Checking this computer"
-  if ! { [ -e /etc/NIXOS ] && command -v nixos-install && command -v nixos-generate-config; } >/dev/null; then
+# Runs before asking for root, so other systems get no sudo prompt.
+check_live_image() {
+  if [ ! -e /etc/NIXOS ]; then
+    die "This is not a NixOS installation image. To install NixOS, boot the image (https://nixos.org/download) and run this again.
+To install only your user environment on this machine, run:
+
+  curl -sL https://tran-engineering.github.io/nixos-central/home-only.sh | sh"
+  fi
+  if ! { command -v nixos-install && command -v nixos-generate-config; } >/dev/null; then
     die "This installer must run from a booted NixOS installation image (https://nixos.org/download)."
   fi
   case "$(findmnt -no FSTYPE / 2>/dev/null)" in
     tmpfs | overlay | rootfs) ;;
     *) die "This does not look like the NixOS live image: the root filesystem is on a disk. Boot the USB image first." ;;
   esac
+}
+
+preflight() {
+  heading "Checking this computer"
   [ -d /sys/firmware/efi ] ||
     die "The computer was started in legacy BIOS mode. Restart and boot the USB image in UEFI mode (check the firmware boot menu)."
   curl -sfI --max-time 15 https://github.com >/dev/null ||
@@ -406,6 +416,7 @@ main() {
   init_globals
   parse_flags "$@"
   check_flags
+  check_live_image
   ensure_root "$@"
   trap cleanup EXIT
   preflight

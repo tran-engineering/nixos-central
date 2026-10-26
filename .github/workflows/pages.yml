@@ -1,10 +1,14 @@
 name: Publish installer
 
 # Serves nixos-central-internal/installer/install.sh at https://tran-engineering.github.io/nixos-central
+# and home-only.sh at https://tran-engineering.github.io/nixos-central/home-only.sh
 on:
   push:
     branches: [main]
-    paths: [nixos-central-internal/installer/install.sh, .github/workflows/pages.yml]
+    paths:
+      - nixos-central-internal/installer/install.sh
+      - nixos-central-internal/installer/home-only.sh
+      - .github/workflows/pages.yml
   workflow_dispatch:
 
 permissions:
@@ -30,6 +34,7 @@ jobs:
           mkdir -p site
           cp nixos-central-internal/installer/install.sh site/index.html
           cp nixos-central-internal/installer/install.sh site/install.sh
+          cp nixos-central-internal/installer/home-only.sh site/home-only.sh
           touch site/.nojekyll
 
       - uses: actions/configure-pages@v5
