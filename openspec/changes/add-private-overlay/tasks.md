@@ -21,11 +21,17 @@
 
 - [x] 4.1 Add `nixos-central-private` (`setup <url>`, `remove`) per the design: mode detection, sudo re-exec on NixOS, known_hosts on standalone, `nix flake metadata --refresh` access check, anchored edits of the template shape with backup and restore, activation; available on NixOS hosts and standalone homes; verify with shellcheck
 - [x] 4.2 Offline VM test: `setup` with an unreachable URL fails with the key hint and leaves `/etc/nixos` unchanged. e2e test (real builds): the test server also serves the test overlay; on the installed machine, `setup` adds the input, `inherit private;` and the overlay's file; a new overlay commit plus `nixos-central-upgrade` activates it; `remove` takes it out again
-- [ ] 4.3 Standalone test (in the existing `home-installer` CI job or a scratch home): `setup` with a `git+file` overlay adds it to `~/.config/home-manager/flake.nix`, the file appears, and `preSwitchCommands` include `private`
+- [x] 4.3 Standalone test (in the existing `home-installer` CI job or a scratch home): `setup` with a `git+file` overlay adds it to `~/.config/home-manager/flake.nix`, the file appears, and `preSwitchCommands` include `private`
 
 ## 5. Documentation
 
 - [x] 5.1 README: a "Private overlay" section (what belongs there, the overlay flake shape with an example `flake.nix` without inputs, the after-first-boot steps: copy `~/.ssh/id_ed25519`, run `nixos-central-private setup git+ssh://git@github.com/<you>/<repo>`, what happens when access breaks, `remove`), and update "Users and profiles" for the relaxed customization rule; verify the example overlay flake builds with `mkHome` in a scratch evaluation
+
+## 6. Profiles in overlays
+
+- [x] 6.1 Resolve the overlay profile in `mkHost` (user) and `mkHome` (profile fact, else user): `homeModules.<name>`, else `homeModules.default`, else throw listing the overlay's profiles; `mkHome` warns about a missing profile only if neither central nor the overlay has it; verify with eval checks for: profile match, fallback to `default`, no match (fails), standalone overlay-only profile without warning
+- [ ] 6.2 Add `--profile NAME` to `nixos-central-private setup` (standalone only; rewrites the `profile = "...";` line; refused on NixOS); verify with the stub test of the editing logic, and extend the CI `home-installer` step to set up the test overlay with `--profile` and check that profile's file
+- [x] 6.3 Update the README "Private overlay" section (profiles per user, `users/<name>` layout, fallback and failure, `--profile` on standalone homes); verify the example overlay flake evaluates with `mkHome`
 
 ## Workflow follow-up
 

@@ -1,5 +1,6 @@
 # Private overlays (README, "Private overlay"): a flake without inputs that
-# exports homeModules.default and optionally nixosModules.default.
+# exports homeModules.<profile> (optionally homeModules.default as fallback)
+# and optionally nixosModules.default.
 { lib }:
 let
   homeDir = ../../modules/home;
@@ -24,8 +25,16 @@ in
     private:
     if (private.inputs or { }) != { } then
       throw "nixos-central: the private overlay must not declare inputs (it has: ${toString (builtins.attrNames private.inputs)}). Overlays only export modules; packages come from the central repository."
-    else if !(private ? homeModules.default) then
-      throw "nixos-central: the private overlay must export homeModules.default."
+    else if (private.homeModules or { }) == { } then
+      throw "nixos-central: the private overlay must export homeModules (one module per profile)."
     else
       private;
+
+  # The overlay's module for profile `name`: homeModules.<name>, else
+  # homeModules.default. Never silently none: a missing profile fails the build.
+  homeModule =
+    private: name:
+    private.homeModules.${name} or private.homeModules.default or (throw
+      "nixos-central: the private overlay has no profile \"${name}\" and no default profile (it has: ${toString (builtins.attrNames private.homeModules)})."
+    );
 }

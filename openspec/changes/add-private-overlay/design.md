@@ -24,13 +24,28 @@
 
 ### `private` is an optional builder argument
 `mkHost { …; private ? null; }` and `mkHome { …; private ? null; }`. When it is given:
-- the primary user's home-manager config imports `private.homeModules.default`;
+- the primary user's home-manager config imports the overlay profile resolved for them (see "Overlay profiles");
 - on NixOS, `private.nixosModules.default` is imported when the overlay exports it;
 - the option `nixos-central.private.enable = true` is set (NixOS and home), so the upgrade modules can react.
 
 Without it, the generated module lists are unchanged, and existing machine and home flakes build identical derivations.
 
 *Alternative:* passing the overlay through `modules`. That already works for NixOS but not for `mkHome`, needs the user to know module wiring, and gives the upgrade no way to know there is an input to update.
+
+### Overlay profiles
+An overlay holds several people's setups, like `users/` in central: it exports `homeModules.<profile>`, plus optionally `homeModules.default` as fallback. The overlay can't choose by itself, because a module can't make `imports` depend on `config.home.username` (infinite recursion). So central resolves it with the same name it uses for its own profile:
+
+```
+ NixOS (mkHost):        name = user
+ standalone (mkHome):   name = profile fact, else user
+ overlay module =       homeModules.<name>  or  homeModules.default  or  throw (lists the profiles)
+```
+
+The failure is deliberate, for the same reason as an unreachable overlay: a configuration that declared an overlay never builds without it.
+
+On standalone homes, `profile` names the person across both repositories. Central uses `users/<name>` or `_default`, the overlay `homeModules.<name>` or `default`. The "profile does not exist" warning only appears if neither has it. A profile that exists only in the overlay (like `kt` once it left central) is recorded with `nixos-central-private setup <url> --profile kt`, which rewrites the `profile = "...";` line of the home flake. `home-only.sh` still only offers central profiles, so the documented order is: install with `--profile _default`, then `setup … --profile kt`. On NixOS the profile is always the primary user's name, so `--profile` is refused there.
+
+A private repository mirrors central's layout: `users/<name>/default.nix` becomes `homeModules.<name>`, and `users/_default` becomes `homeModules.default`.
 
 ### Overlays have no inputs
 `mkHost`/`mkHome` throw if `private.inputs != {}`, with a message that overlays may only export modules. This keeps one nixpkgs (central's) and makes the lock file's `private` entry a single repository. Flake objects expose `inputs` (checked: `[]` for a module-only flake).
@@ -93,7 +108,8 @@ It's one script, in the system packages on NixOS and in `standalone.nix` for hom
    3. check access: nix flake metadata --refresh <url>   (as root on NixOS)
         fails --> print key path + "add it to GitHub", exit, nothing changed
    4. back up flake.nix + flake.lock
-   5. edit flake.nix in the template's shape:
+   5. edit flake.nix in the template's shape (with --profile, standalone only:
+        `profile = "...";` -> `profile = "<name>";`):
         after `inputs.central.url = ...;`  add `inputs.private.url = "<url>";`
         `{ central, ... }:`                -> `{ central, private, ... }:`
         before `modules = [` (host) or `stateVersion` (home) add `inherit private;`

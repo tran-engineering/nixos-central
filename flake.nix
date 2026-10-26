@@ -189,6 +189,44 @@
               assert hm.programs.fish.enable;
               evalOnly "overlay-eval" overlayHost.config.system.build.toplevel;
 
+            # The overlay profile is chosen by user (NixOS) or profile fact
+            # (standalone), with homeModules.default as fallback.
+            overlay-profiles =
+              let
+                profileOverlay = withDefault: {
+                  inputs = { };
+                  homeModules = {
+                    ci-user.home.file.overlay-profile.text = "ci-user";
+                    kt.home.file.overlay-profile.text = "kt";
+                  }
+                  // nixpkgs.lib.optionalAttrs withDefault { default.home.file.overlay-profile.text = "default"; };
+                };
+                hostFile =
+                  user: withDefault:
+                  (ciHost "ci-overlay" {
+                    desktop = "none";
+                    inherit system user;
+                    private = profileOverlay withDefault;
+                  }).config.home-manager.users.${user}.home.file.overlay-profile.text;
+                home =
+                  profile: withDefault:
+                  (centralLib.mkHome {
+                    user = "ci-home";
+                    homeDirectory = "/home/ci-home";
+                    stateVersion = centralLib.release;
+                    inherit system profile;
+                    private = profileOverlay withDefault;
+                  }).config;
+                missingWarning = cfg: builtins.any (nixpkgs.lib.hasInfix "does not exist") cfg.warnings;
+              in
+              assert hostFile "ci-user" true == "ci-user";
+              assert hostFile "nobodyhere" true == "default";
+              assert !(builtins.tryEval (hostFile "nobodyhere" false)).success;
+              assert (home "kt" false).home.file.overlay-profile.text == "kt";
+              assert !(missingWarning (home "kt" false));
+              assert missingWarning (home "nobodyhere" true);
+              pkgs.writeText "overlay-profiles" "ok";
+
             # Overlays with inputs are refused.
             overlay-rejects-inputs =
               assert

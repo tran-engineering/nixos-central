@@ -10,10 +10,15 @@ die() {
 
 usage() {
   cat >&2 <<'EOF'
-Usage: nixos-central-private setup <flake-url>   add the private overlay and activate it
-       nixos-central-private remove              remove it and activate the result
+Usage: nixos-central-private setup <flake-url> [--profile NAME]
+                                          add the private overlay and activate it
+       nixos-central-private remove       remove it and activate the result
 
-Example: nixos-central-private setup git+ssh://git@github.com/alice/private
+--profile NAME  standalone homes only: use profile NAME (in the central
+                repository and the overlay) instead of the recorded one.
+                On NixOS the profile is always the primary user's name.
+
+Example: nixos-central-private setup git+ssh://git@github.com/alice/private --profile alice
 EOF
   exit 2
 }
@@ -70,7 +75,11 @@ activate() {
 }
 
 setup() {
-  local url=$1
+  local url=$1 profile=${2:-}
+  if [ -n "$profile" ]; then
+    [ "$MODE" = home ] || die "--profile is only for standalone homes; on NixOS the profile is the primary user's name."
+    [[ $profile =~ ^[A-Za-z0-9._-]+$ ]] || die "Invalid profile name: $profile"
+  fi
   has_overlay && die "This configuration already has a private overlay. Remove it first: nixos-central-private remove"
 
   if [ "$MODE" = home ]; then
@@ -87,6 +96,7 @@ setup() {
     before='^ *stateVersion = ' before_text='stateVersion = "...";'
   fi
   require_anchor "$before" "$before_text"
+  [ -z "$profile" ] || require_anchor '^ *profile = "[^"]*";' 'profile = "...";'
 
   info "Checking access to $url ..."
   local err
@@ -104,6 +114,8 @@ setup() {
     -e 's|{ *central, *\.\.\. *}:|{ central, private, ... }:|' \
     -e "s|\($before\)|inherit private;\n&|" \
     "$FLAKE"
+  [ -z "$profile" ] ||
+    sed -i "s|^\( *profile = \)\"[^\"]*\";.*$|\1\"$profile\"; # in the central repository or the private overlay|" "$FLAKE"
   # Indent `inherit private;` like the line after it.
   sed -i -e '/^inherit private;$/{N;s/^inherit private;\n\( *\)\(.*\)$/\1inherit private;\n\1\2/}' "$FLAKE"
 
@@ -132,14 +144,21 @@ remove() {
 
 main() {
   set -Eeuo pipefail
+  local profile=""
   case "${1:-}" in
-    setup) [ $# -eq 2 ] || usage ;;
+    setup)
+      if [ $# -eq 4 ] && [ "$3" = --profile ]; then
+        profile=$4
+      else
+        [ $# -eq 2 ] || usage
+      fi
+      ;;
     remove) [ $# -eq 1 ] || usage ;;
     *) usage ;;
   esac
   detect "$@"
   case "$1" in
-    setup) setup "$2" ;;
+    setup) setup "$2" "$profile" ;;
     remove) remove ;;
   esac
 }

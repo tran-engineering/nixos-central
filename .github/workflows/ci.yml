@@ -50,8 +50,10 @@ jobs:
           git -C /tmp/private init -q
           git -C /tmp/private add .
           git -C /tmp/private -c user.name=ci -c user.email=ci@ci commit -qm overlay
-          nixos-central-private setup git+file:///tmp/private
+          nixos-central-private setup git+file:///tmp/private --profile ci-overlay
           grep -q 'inputs.private.url = "git+file:///tmp/private";' ~/.config/home-manager/flake.nix
+          grep -q 'profile = "ci-overlay";' ~/.config/home-manager/flake.nix   # overlay-only profile
+          grep -q 'ci-overlay' ~/.nixos-central-overlay-profile                # that profile's file
           grep -q 'from the overlay' ~/.nixos-central-overlay-test            # overlay's file
           command -v fish                                                     # centralModules.fish
           grep -q 'nix flake update central private' "$(sed -n 's/^ExecStart=//p' ~/.config/systemd/user/home-manager-auto-upgrade.service)"
@@ -59,6 +61,7 @@ jobs:
           nixos-central-private remove
           if grep -q private ~/.config/home-manager/flake.nix; then exit 1; fi
           test ! -e ~/.nixos-central-overlay-test
+          test ! -e ~/.nixos-central-overlay-profile
 
   flake:
     runs-on: ubuntu-latest

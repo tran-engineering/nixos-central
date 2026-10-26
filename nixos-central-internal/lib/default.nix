@@ -46,7 +46,7 @@ let
         {
           nixos-central.private.enable = true;
           home-manager.users.${user} = {
-            imports = [ checked.homeModules.default ];
+            imports = [ (overlay.homeModule checked user) ];
             nixos-central.private.enable = true;
           };
         }
@@ -94,7 +94,9 @@ in
     }:
     let
       shared = import ./nixpkgs.nix { inherit inputs; };
-      resolved = (import ./profiles.nix).resolve (if profile == null then user else profile);
+      name = if profile == null then user else profile;
+      resolved = (import ./profiles.nix).resolve name;
+      inOverlay = private != null && (overlay.check private).homeModules ? ${name};
       # Recording the host's NVIDIA driver means using it, which requires its license.
       nixpkgsConfig = shared.config // lib.optionalAttrs (nvidia != null) { nvidia.acceptLicense = true; };
     in
@@ -114,7 +116,7 @@ in
           home.username = user;
           home.homeDirectory = homeDirectory;
           home.stateVersion = stateVersion;
-          warnings = lib.optional (profile != null && resolved.fallback) ''
+          warnings = lib.optional (profile != null && resolved.fallback && !inOverlay) ''
             nixos-central: profile "${profile}" does not exist in the central repository; using the default profile.
             Choose another one in ~/.config/home-manager/flake.nix (available: ${toString (import ./profiles.nix).names}).
           '';
@@ -127,7 +129,7 @@ in
         })
       ]
       ++ lib.optionals (private != null) [
-        (overlay.check private).homeModules.default
+        (overlay.homeModule (overlay.check private) name)
         { nixos-central.private.enable = true; }
       ];
     };

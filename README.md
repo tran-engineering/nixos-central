@@ -296,24 +296,35 @@ modules you use, your login shell, name and email, fonts and themes, and files
 that must not be public (work SSH configuration, internal scripts). It is added
 to a machine after installation and applied on top of the default profile.
 
-The overlay is a flake **without inputs** that only exports modules; packages
-and options come from this repository:
+The overlay is a flake **without inputs** that only exports modules, one per
+profile; packages and options come from this repository. Like `users/` here,
+it can hold several people's profiles:
 
 ```nix
 # flake.nix in your private repository
 {
   outputs = _: {
-    homeModules.default = { centralModules, pkgs, ... }: {
+    homeModules.alice = { centralModules, pkgs, ... }: {
       imports = with centralModules; [ dev-cli git fish ghostty ];
       nixos-central.shell = "fish";
       programs.git.settings.user = { name = "Alice"; email = "alice@example.com"; };
-      home.file.".ssh/config".source = ./ssh/config;
+      home.file.".ssh/config".source = ./alice/ssh/config;
     };
+    homeModules.bob = { centralModules, ... }: {
+      imports = with centralModules; [ general-tools ];
+    };
+    # Optional fallback for users without a profile of their own:
+    # homeModules.default = { ... }: { };
     # Optional, NixOS machines only:
     # nixosModules.default = { ... }: { };
   };
 }
 ```
+
+The profile is chosen by the same name as here: the primary user's name on
+NixOS, the recorded `profile` on other distributions. Without a matching
+profile, `homeModules.default` is used; if that doesn't exist either, the build
+fails and lists the overlay's profiles.
 
 Set it up after the first boot (NixOS) or after `home-only.sh` (other
 distributions):
@@ -330,6 +341,14 @@ distributions):
    It checks that the key can read the repository, adds the overlay to
    `/etc/nixos/flake.nix` (or `~/.config/home-manager/flake.nix`) and
    activates it. If anything fails, the flake is left as it was.
+
+   On another distribution, add `--profile NAME` to use a profile that exists
+   only in your overlay (the home installer only offers profiles from this
+   repository, so install with `_default` first):
+
+   ```sh
+   nixos-central-private setup git+ssh://git@github.com/alice/private --profile alice
+   ```
 
 From then on, daily updates and `nixos-central-upgrade` update the overlay
 together with this repository. On NixOS they run as root, which uses your
