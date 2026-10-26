@@ -64,6 +64,14 @@ Before any prompt that leads to disk changes, the installer SHALL verify it runs
 - **WHEN** GitHub is not reachable
 - **THEN** the installer aborts and suggests connecting to the network (e.g. with `nmtui`)
 
+#### Scenario: Not a live image
+- **WHEN** the installer is run on an installed Linux system that is not NixOS
+- **THEN** it aborts before asking for root privileges, and the message includes the one-line command for the home installer
+
+#### Scenario: Installed NixOS
+- **WHEN** the installer is run on an installed NixOS machine
+- **THEN** it aborts before asking for root privileges and tells the user to boot the NixOS installation image
+
 ### Requirement: Target disk is selected automatically
 Without `--disk`, the installer SHALL select the first whole disk of at least 40 GiB that is neither the device the live image booted from nor a removable/USB device. If none qualifies, it MUST abort and list the available disks.
 

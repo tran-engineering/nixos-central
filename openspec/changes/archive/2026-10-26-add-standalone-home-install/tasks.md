@@ -36,7 +36,7 @@
 
 ## 6. Integration check
 
-- [ ] 6.1 On a real non-NixOS machine (e.g. a k-nixos standalone user), run the published one-liner with a personal profile, open a new login session, and confirm the profile's programs, GPU-accelerated graphical apps after the GPU setup, and the `home-manager-auto-upgrade.timer` being active
+- [x] 6.1 On a real non-NixOS machine (e.g. a k-nixos standalone user), run the published one-liner with a personal profile, open a new login session, and confirm the profile's programs, GPU-accelerated graphical apps after the GPU setup, and the `home-manager-auto-upgrade.timer` being active
 
 ## Workflow follow-up
 
