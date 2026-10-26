@@ -35,6 +35,11 @@ def check(cond, msg):
     print(f"\033[32mOK\033[0m {msg}", flush=True)
 
 
+def desktop_names(repo):
+    """Desktops the installer offers: modules/desktops/<name>.nix, sorted like lib.desktopNames."""
+    return sorted(f[:-4] for f in os.listdir(os.path.join(repo, "modules", "desktops")) if f.endswith(".nix"))
+
+
 class Repo:
     """Bare copy of the working tree, served over smart HTTP via git http-backend."""
 
@@ -263,7 +268,8 @@ def phase_install(args):
     vm.answer(r"reserved.*\r\n.*Your username: ", "root")
     vm.answer(r"reserved.*\r\n.*Your username: ", "alice")
     vm.answer(r"Desktop \[kde\]: ", "windows")
-    vm.answer(r"Choose one of: kde none.*\r\n.*Desktop \[kde\]: ", "none")
+    desktops = re.escape(" ".join(desktop_names(args.repo)))
+    vm.answer(rf"Choose one of: {desktops}.*\r\n.*Desktop \[kde\]: ", "none")
     vm.expect(r"NixOS will be installed on:\s+/dev/vda \(50G")
     check(True, "first internal disk /dev/vda chosen, USB disk /dev/sda (64G) skipped")
     vm.answer(r"Type 'yes' to erase it and install: ", "y")
