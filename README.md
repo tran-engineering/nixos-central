@@ -68,6 +68,48 @@ installer before anything is changed.
 On failure it names the failed step and the log file
 (`/tmp/nixos-central-install.log` on the live system) and does not reboot.
 
+## Install on another Linux distribution
+
+Your [profile](#users-and-profiles) also works without NixOS, e.g. on Ubuntu,
+Fedora or Arch (x86_64 or aarch64). Run as yourself, not as root:
+
+```sh
+curl -sL https://tran-engineering.github.io/nixos-central/home-only.sh | sh
+```
+
+It changes only your home directory, except for two steps it asks about first:
+installing [Nix](https://nixos.org/download) if it is missing, and a one-time
+GPU driver setup (both need `sudo`). It sets up your current login name, so a
+different name than on your NixOS machines is fine: pick the profile you want.
+
+| Option | Default | Notes |
+|---|---|---|
+| `--profile NAME` | asked; suggests your login name's profile, else `_default` | one of the profiles in `users/` |
+| `--install-nix` | asked | install Nix if missing |
+| `--replace-existing` | asked | move an existing `~/.config/home-manager` aside (`.backup-<date>`) |
+| `--gpu-setup` / `--no-gpu-setup` | asked, suggests yes | |
+
+Files in your home that the profile takes over (e.g. `~/.bashrc`) are kept as
+`<file>.backup`. Your login shell is not changed; if the profile provides fish
+or zsh, the installer prints how to switch.
+
+The home's facts live in `~/.config/home-manager/flake.nix` (login name, home
+directory, profile, NVIDIA driver); everything else comes from this repository.
+It updates itself daily (`systemctl --user list-timers home-manager-auto-upgrade.timer`).
+Run by hand:
+
+```sh
+nix flake update central --flake ~/.config/home-manager && home-manager switch --flake ~/.config/home-manager   # update now
+home-manager generations                     # then run <generation path>/activate to roll back
+```
+
+**GPU drivers.** Graphical programs from Nix need the drivers set up once per
+machine: `sudo <path>/bin/non-nixos-gpu-setup` (the installer runs it or prints
+the exact command; home-manager reminds you when it is needed). With the
+proprietary NVIDIA driver, the installer records its version; after the
+distribution updates the driver, run the installer again with
+`--replace-existing` so the recorded version matches.
+
 ## How a machine is configured
 
 Each machine has a small flake in `/etc/nixos` with only its own facts; the rest
@@ -177,6 +219,9 @@ NIXPKGS_ALLOW_UNFREE=1 nix shell --impure nixpkgs#discord   # unfree packages
 
 These use the same nixpkgs version as the installed system.
 
+Profiles named `ci-*` (e.g. `users/ci-user`) exist only for tests and are not
+offered by the home installer.
+
 ## Updates
 
 - Every day (or soon after boot, if the computer was off) each machine fetches
@@ -212,7 +257,10 @@ nix flake check                       # evaluates and builds sample hosts, runs 
 nix build .#checks.x86_64-linux.shells
 nix run --impure -f nixos-central-internal/tests/e2e   # full installer test in QEMU (needs KVM + internet)
 shellcheck nixos-central-internal/installer/install.sh
+shellcheck nixos-central-internal/installer/home-only.sh
 ```
 
 Sample hosts used in CI: `ci-gnome`, `ci-kde`, `ci-niri-noctalia`, `ci-none`, `ci-default-profile`
-(`nixosConfigurations`, not meant to be installed).
+(`nixosConfigurations`, not meant to be installed). Sample standalone homes:
+`ci-home-default`, `ci-home-renamed`, `ci-home-aarch64` (`homeConfigurations`);
+every selectable profile is also built standalone (`home-profile-<name>` checks).

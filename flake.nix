@@ -20,6 +20,11 @@
     let
       systems = [ "x86_64-linux" ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
+      # Standalone homes also run on ARM, so their packages exist for both.
+      forPackageSystems = nixpkgs.lib.genAttrs [
+        "x86_64-linux"
+        "aarch64-linux"
+      ];
       centralLib = import ./nixos-central-internal/lib { inherit inputs; };
 
       # Sample machines, built in CI. Not meant to be installed.
@@ -35,6 +40,18 @@
           }
           // args
         );
+
+      # Sample standalone homes, built in CI. Not meant to be installed.
+      ciHome =
+        args:
+        centralLib.mkHome (
+          {
+            user = "ci-home";
+            homeDirectory = "/home/${args.user or "ci-home"}";
+            stateVersion = centralLib.release;
+          }
+          // args
+        );
     in
     {
       # Entry point for machine flakes: central.lib.mkHost { ... }
@@ -44,6 +61,12 @@
       templates.host = {
         path = ./nixos-central-internal/templates/host;
         description = "Machine flake for a nixos-central host";
+      };
+
+      # Copied to ~/.config/home-manager by home-only.sh.
+      templates.home = {
+        path = ./nixos-central-internal/templates/home;
+        description = "Home flake for a standalone nixos-central home (Linux without NixOS)";
       };
 
       nixosConfigurations = {
@@ -57,9 +80,21 @@
         };
       };
 
-      packages = forAllSystems (system: {
+      homeConfigurations = {
+        ci-home-default = ciHome { profile = "_default"; };
+        # Login name differs from the profile name.
+        ci-home-renamed = ciHome {
+          user = "ci.user";
+          profile = "ci-user";
+        };
+        ci-home-aarch64 = ciHome { system = "aarch64-linux"; };
+      };
+
+      packages = forPackageSystems (system: {
         # Used by the installer: nix run github:tran-engineering/nixos-central#disko
         inherit (disko.packages.${system}) disko;
+        # Used by home-only.sh for the first switch, so it matches the pinned release.
+        inherit (inputs.home-manager.packages.${system}) home-manager;
         installer = nixpkgs.legacyPackages.${system}.writeShellScriptBin "nixos-central-install" (
           builtins.readFile ./nixos-central-internal/installer/install.sh
         );
@@ -70,6 +105,26 @@
         nixpkgs.lib.mapAttrs' (
           name: host: nixpkgs.lib.nameValuePair "host-${name}" host.config.system.build.toplevel
         ) (nixpkgs.lib.filterAttrs (_: host: host.pkgs.stdenv.hostPlatform.system == system) self.nixosConfigurations)
+        // nixpkgs.lib.mapAttrs' (
+          name: home: nixpkgs.lib.nameValuePair "home-${name}" home.activationPackage
+        ) (nixpkgs.lib.filterAttrs (_: home: home.pkgs.stdenv.hostPlatform.system == system) self.homeConfigurations)
+        # Every selectable profile must also build standalone (no NixOS-only options).
+        // nixpkgs.lib.listToAttrs (
+          map (
+            profile:
+            nixpkgs.lib.nameValuePair "home-profile-${profile}"
+              (ciHome { inherit system profile; }).activationPackage
+          ) centralLib.profileNames
+        )
+        # Other platforms are only evaluated, not built.
+        // nixpkgs.lib.mapAttrs' (
+          name: home:
+          nixpkgs.lib.nameValuePair "home-eval-${name}" (
+            nixpkgs.legacyPackages.${system}.writeText "home-eval-${name}" (
+              builtins.unsafeDiscardStringContext home.activationPackage.drvPath
+            )
+          )
+        ) (nixpkgs.lib.filterAttrs (_: home: home.pkgs.stdenv.hostPlatform.system != system) self.homeConfigurations)
         // import ./nixos-central-internal/tests { inherit inputs system; }
       );
     };
