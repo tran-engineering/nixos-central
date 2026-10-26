@@ -88,6 +88,11 @@
           profile = "ci-user";
         };
         ci-home-aarch64 = ciHome { system = "aarch64-linux"; };
+        # Shared home modules on ARM (via the kt profile).
+        ci-home-kt-aarch64 = ciHome {
+          system = "aarch64-linux";
+          profile = "kt";
+        };
       };
 
       packages = forPackageSystems (system: {
@@ -102,28 +107,41 @@
 
       checks = forAllSystems (
         system:
+        let
+          # Evaluates a derivation without building it or fetching its inputs.
+          # Used where the packages are trusted to nixpkgs' Hydra.
+          evalOnly =
+            name: drv:
+            nixpkgs.legacyPackages.${system}.writeText name (builtins.unsafeDiscardStringContext drv.drvPath);
+        in
         nixpkgs.lib.mapAttrs' (
           name: host: nixpkgs.lib.nameValuePair "host-${name}" host.config.system.build.toplevel
         ) (nixpkgs.lib.filterAttrs (_: host: host.pkgs.stdenv.hostPlatform.system == system) self.nixosConfigurations)
         // nixpkgs.lib.mapAttrs' (
           name: home: nixpkgs.lib.nameValuePair "home-${name}" home.activationPackage
         ) (nixpkgs.lib.filterAttrs (_: home: home.pkgs.stdenv.hostPlatform.system == system) self.homeConfigurations)
-        # Every selectable profile must also build standalone (no NixOS-only options).
+        # Every selectable profile must also evaluate standalone (no NixOS-only
+        # options). Evaluated only: profiles can pull in large closures, and
+        # _default is built via ci-home-default.
         // nixpkgs.lib.listToAttrs (
           map (
             profile:
-            nixpkgs.lib.nameValuePair "home-profile-${profile}"
-              (ciHome { inherit system profile; }).activationPackage
+            nixpkgs.lib.nameValuePair "home-profile-${profile}" (
+              evalOnly "home-profile-${profile}" (ciHome { inherit system profile; }).activationPackage
+            )
           ) centralLib.profileNames
         )
+        # Shared home modules on NixOS (via the kt profile), evaluated only.
+        // {
+          host-eval-kt = evalOnly "host-eval-kt" (ciHost "ci-kt" {
+            desktop = "none";
+            user = "kt";
+            inherit system;
+          }).config.system.build.toplevel;
+        }
         # Other platforms are only evaluated, not built.
         // nixpkgs.lib.mapAttrs' (
-          name: home:
-          nixpkgs.lib.nameValuePair "home-eval-${name}" (
-            nixpkgs.legacyPackages.${system}.writeText "home-eval-${name}" (
-              builtins.unsafeDiscardStringContext home.activationPackage.drvPath
-            )
-          )
+          name: home: nixpkgs.lib.nameValuePair "home-eval-${name}" (evalOnly "home-eval-${name}" home.activationPackage)
         ) (nixpkgs.lib.filterAttrs (_: home: home.pkgs.stdenv.hostPlatform.system != system) self.homeConfigurations)
         // import ./nixos-central-internal/tests { inherit inputs system; }
       );

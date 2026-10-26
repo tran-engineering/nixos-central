@@ -84,6 +84,7 @@ in
       };
       modules = [
         resolved.path
+        ../../modules/home/shell.nix
         ../../modules/home/standalone.nix
         {
           home.username = user;

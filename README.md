@@ -90,8 +90,8 @@ different name than on your NixOS machines is fine: pick the profile you want.
 | `--gpu-setup` / `--no-gpu-setup` | asked, suggests yes | |
 
 Files in your home that the profile takes over (e.g. `~/.bashrc`) are kept as
-`<file>.backup`. Your login shell is not changed; if the profile provides fish
-or zsh, the installer prints how to switch.
+`<file>.backup`. Your login shell is not changed; if the profile
+[selects](#login-shell) fish or zsh, the installer prints how to switch.
 
 The home's facts live in `~/.config/home-manager/flake.nix` (login name, home
 directory, profile, NVIDIA driver); everything else comes from this repository.
@@ -219,6 +219,68 @@ NIXPKGS_ALLOW_UNFREE=1 nix shell --impure nixpkgs#discord   # unfree packages
 
 These use the same nixpkgs version as the installed system.
 
+### Shared modules
+
+Sets of tools a profile can opt into, in `modules/home/`. They work on NixOS
+and on other distributions alike:
+
+| Module | Provides |
+|---|---|
+| `general-tools.nix` | everyday CLI utilities: `bat`, `eza`, `dust`, `ncdu`, `7z`, `yt-dlp`, `ffmpeg`, `imagemagick`, `exiftool`, `nslookup`, … |
+| `dev-cli` | development tooling: `rg`, `just`, `jq`, `gh`, `lazygit`, `rustup`, `uv`, `claude`, `opencode`, Kubernetes/Terraform/AWS CLIs, Nix tooling; cargo and pnpm binaries on the `PATH`, Node.js via mise |
+| `git.nix` | git with Git LFS; rebase on pull, push sets the upstream |
+| `jj.nix` | jj and `jjui`; bookmarks track `origin`, commits described `wip:`/`private:` are not pushed |
+| `dev-desktop.nix` | the Zed editor (`zed`) with its Claude agent |
+| `idea.nix` | IntelliJ IDEA |
+| `godot.nix` | Godot |
+| `drawio.nix` | draw.io |
+| `fish` | fish with the tide prompt, `fzf` search, `z`, `cd-gitroot` |
+| `zsh.nix` | zsh with completion, autosuggestions, syntax highlighting, shared history |
+| `foot.nix` | the foot terminal |
+| `ghostty.nix` | the Ghostty terminal |
+
+The fish prompt and the terminals come with an icon font, so the prompt's
+icons render whatever main font you choose. To use your own tide prompt, run
+`tide configure`, save the result as described in
+`modules/home/fish/tide.fish`, and point
+`xdg.configFile."fish/conf.d/tide.fish".source` at it.
+
+Import each module you want:
+
+```nix
+# users/alice/default.nix
+{
+  imports = [
+    ../_default
+    ../../modules/home/dev-cli
+    ../../modules/home/git.nix
+    ../../modules/home/godot.nix
+  ];
+}
+```
+
+The modules set no names or emails; put those in your profile. Their workflow
+defaults (git, jj, and Node.js 24 in `dev-cli`) are overridden by setting the
+same option:
+
+```nix
+programs.git.settings.pull.rebase = false;
+programs.mise.globalConfig.tools.node = [ "22" ];
+```
+
+### Login shell
+
+The login shell is bash unless the profile selects another one:
+
+```nix
+nixos-central.shell = "fish";   # "bash" (default), "fish" or "zsh"
+```
+
+NixOS machines switch to it with their next update (log in again). On another
+Linux distribution, changing the login shell needs root, so the home installer
+prints the `chsh` command instead. Selecting a shell installs it; import the
+`fish` or `zsh` module as well for the configuration above.
+
 Profiles named `ci-*` (e.g. `users/ci-user`) exist only for tests and are not
 offered by the home installer.
 
@@ -262,5 +324,8 @@ shellcheck nixos-central-internal/installer/home-only.sh
 
 Sample hosts used in CI: `ci-gnome`, `ci-kde`, `ci-niri-noctalia`, `ci-none`, `ci-default-profile`
 (`nixosConfigurations`, not meant to be installed). Sample standalone homes:
-`ci-home-default`, `ci-home-renamed`, `ci-home-aarch64` (`homeConfigurations`);
-every selectable profile is also built standalone (`home-profile-<name>` checks).
+`ci-home-default`, `ci-home-renamed`, `ci-home-aarch64`, `ci-home-kt-aarch64`
+(`homeConfigurations`). Every selectable profile is also evaluated standalone
+(`home-profile-<name>` checks) and the `kt` profile on NixOS (`host-eval-kt`).
+These checks don't build the profiles' packages; those come from the NixOS
+binary cache.
