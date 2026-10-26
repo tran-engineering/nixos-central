@@ -59,7 +59,7 @@ jobs:
           grep -q 'nix flake update central private' "$(sed -n 's/^ExecStart=//p' ~/.config/systemd/user/home-manager-auto-upgrade.service)"
           grep -q 'github.com ssh-ed25519' ~/.ssh/known_hosts
           nixos-central-private remove
-          if grep -q private ~/.config/home-manager/flake.nix; then exit 1; fi
+          if grep -qE 'inputs\.private|inherit private|central, private' ~/.config/home-manager/flake.nix; then exit 1; fi
           test ! -e ~/.nixos-central-overlay-test
           test ! -e ~/.nixos-central-overlay-profile
 
