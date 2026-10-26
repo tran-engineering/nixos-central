@@ -44,7 +44,7 @@ let
 
       if ! nixos-rebuild switch \
         --flake "/etc/nixos#${config.nixos-central.hostname}" \
-        ${lib.escapeShellArgs (import ./central-update-flags.nix)} \
+        ${lib.escapeShellArgs (import ./central-update-flags.nix config)} \
         --refresh; then
         if [ "$(readlink /nix/var/nix/profiles/system || true)" = "$profile_before" ]; then
           cp "$backup" "$lock"

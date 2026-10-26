@@ -2,6 +2,7 @@
 let
   inherit (inputs) nixpkgs home-manager disko;
   inherit (nixpkgs) lib;
+  overlay = import ./overlay.nix { inherit lib; };
 
   # All NixOS modules of a machine, without evaluating them (also used by tests).
   hostModules =
@@ -13,7 +14,11 @@ let
       stateVersion,
       modules ? [ ],
       system ? "x86_64-linux",
+      private ? null, # private overlay flake (README, "Private overlay")
     }:
+    let
+      checked = overlay.check private;
+    in
     [
       disko.nixosModules.disko
       home-manager.nixosModules.home-manager
@@ -33,14 +38,30 @@ let
             disk
             ;
         };
+        home-manager.extraSpecialArgs = { inherit (overlay) centralModules; };
       }
     ]
+    ++ lib.optionals (private != null) (
+      [
+        {
+          nixos-central.private.enable = true;
+          home-manager.users.${user} = {
+            imports = [ checked.homeModules.default ];
+            nixos-central.private.enable = true;
+          };
+        }
+      ]
+      ++ lib.optional (checked ? nixosModules.default) checked.nixosModules.default
+    )
     ++ modules;
 in
 {
   inherit hostModules;
 
   desktopNames = import ./desktop-names.nix;
+
+  # Shared home modules by name, as profiles and overlays get them.
+  inherit (overlay) centralModules;
 
   # Profiles offered by home-only.sh (see profiles.nix).
   profileNames = (import ./profiles.nix).names;
@@ -69,6 +90,7 @@ in
       system ? "x86_64-linux",
       profile ? null,
       nvidia ? null, # { version; sha256; } of the host's driver
+      private ? null, # private overlay flake (README, "Private overlay")
     }:
     let
       shared = import ./nixpkgs.nix { inherit inputs; };
@@ -82,9 +104,11 @@ in
         config = nixpkgsConfig;
         overlays = [ (shared.unstableOverlay nixpkgsConfig) ];
       };
+      extraSpecialArgs = { inherit (overlay) centralModules; };
       modules = [
         resolved.path
         ../../modules/home/shell.nix
+        ../../modules/home/private.nix
         ../../modules/home/standalone.nix
         {
           home.username = user;
@@ -101,6 +125,10 @@ in
             inherit (nvidia) version sha256;
           };
         })
+      ]
+      ++ lib.optionals (private != null) [
+        (overlay.check private).homeModules.default
+        { nixos-central.private.enable = true; }
       ];
     };
 }

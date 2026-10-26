@@ -88,10 +88,10 @@
           profile = "ci-user";
         };
         ci-home-aarch64 = ciHome { system = "aarch64-linux"; };
-        # Shared home modules on ARM (via the kt profile).
-        ci-home-kt-aarch64 = ciHome {
+        # Shared home modules on ARM (via the ci-modules profile).
+        ci-home-modules-aarch64 = ciHome {
           system = "aarch64-linux";
-          profile = "kt";
+          profile = "ci-modules";
         };
       };
 
@@ -131,14 +131,81 @@
             )
           ) centralLib.profileNames
         )
-        # Shared home modules on NixOS (via the kt profile), evaluated only.
+        # Every shared module (via the ci-modules profile), evaluated only:
+        # on NixOS and as a standalone home.
         // {
-          host-eval-kt = evalOnly "host-eval-kt" (ciHost "ci-kt" {
+          host-eval-ci-modules = evalOnly "host-eval-ci-modules" (ciHost "ci-modules" {
             desktop = "none";
-            user = "kt";
+            user = "ci-modules";
             inherit system;
           }).config.system.build.toplevel;
+          home-eval-ci-modules = evalOnly "home-eval-ci-modules" (ciHome {
+            inherit system;
+            profile = "ci-modules";
+          }).activationPackage;
         }
+        // (
+          let
+            pkgs = nixpkgs.legacyPackages.${system};
+            # Test overlay as a flake object (pure evaluation can't getFlake a path).
+            testOverlay = (import ./nixos-central-internal/tests/overlay/flake.nix).outputs { } // {
+              inputs = { };
+            };
+            overlayHost = ciHost "ci-overlay" {
+              desktop = "none";
+              inherit system;
+              private = testOverlay;
+            };
+            # The names overlays rely on; changing them breaks overlays (announce it).
+            expectedModules = [
+              "dev-cli"
+              "dev-desktop"
+              "drawio"
+              "fish"
+              "foot"
+              "general-tools"
+              "ghostty"
+              "git"
+              "godot"
+              "idea"
+              "jj"
+              "zsh"
+            ];
+            actualModules = builtins.attrNames centralLib.centralModules;
+          in
+          {
+            central-modules =
+              assert nixpkgs.lib.assertMsg (actualModules == expectedModules)
+                "centralModules changed: ${toString actualModules}. Update expectedModules in flake.nix and announce removed or renamed names as breaking.";
+              pkgs.writeText "central-modules" (toString actualModules);
+
+            # The overlay reaches the system, the user's home and centralModules.
+            overlay-eval =
+              let
+                hm = overlayHost.config.home-manager.users.ci-user;
+              in
+              assert overlayHost.config.environment.etc."nixos-central-overlay-test".text == "from the overlay\n";
+              assert hm.home.file.".nixos-central-overlay-test".text == "from the overlay\n";
+              assert hm.programs.fish.enable;
+              evalOnly "overlay-eval" overlayHost.config.system.build.toplevel;
+
+            # Overlays with inputs are refused.
+            overlay-rejects-inputs =
+              assert
+                !(builtins.tryEval
+                  (centralLib.mkHome {
+                    user = "ci-home";
+                    homeDirectory = "/home/ci-home";
+                    stateVersion = centralLib.release;
+                    inherit system;
+                    private = testOverlay // {
+                      inputs.nixpkgs = nixpkgs;
+                    };
+                  }).activationPackage.drvPath
+                ).success;
+              pkgs.writeText "overlay-rejects-inputs" "ok";
+          }
+        )
         # Other platforms are only evaluated, not built.
         // nixpkgs.lib.mapAttrs' (
           name: home: nixpkgs.lib.nameValuePair "home-eval-${name}" (evalOnly "home-eval-${name}" home.activationPackage)

@@ -32,7 +32,10 @@ in
     useGlobalPkgs = true;
     useUserPackages = true;
     backupFileExtension = "backup";
-    sharedModules = [ ./home/shell.nix ];
+    sharedModules = [
+      ./home/shell.nix
+      ./home/private.nix
+    ];
     users.${user} = {
       imports = [ profile ];
       home.stateVersion = config.system.stateVersion;

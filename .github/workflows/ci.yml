@@ -42,6 +42,24 @@ jobs:
           test -f ~/.config/systemd/user/home-manager-auto-upgrade.timer
           grep -q 'profile = "_default"' ~/.config/home-manager/flake.nix
 
+      - name: Add and remove a private overlay
+        shell: bash -l {0}
+        run: |
+          set -eux
+          cp -r nixos-central-internal/tests/overlay /tmp/private
+          git -C /tmp/private init -q
+          git -C /tmp/private add .
+          git -C /tmp/private -c user.name=ci -c user.email=ci@ci commit -qm overlay
+          nixos-central-private setup git+file:///tmp/private
+          grep -q 'inputs.private.url = "git+file:///tmp/private";' ~/.config/home-manager/flake.nix
+          grep -q 'from the overlay' ~/.nixos-central-overlay-test            # overlay's file
+          command -v fish                                                     # centralModules.fish
+          grep -q 'nix flake update central private' "$(sed -n 's/^ExecStart=//p' ~/.config/systemd/user/home-manager-auto-upgrade.service)"
+          grep -q 'github.com ssh-ed25519' ~/.ssh/known_hosts
+          nixos-central-private remove
+          if grep -q private ~/.config/home-manager/flake.nix; then exit 1; fi
+          test ! -e ~/.nixos-central-overlay-test
+
   flake:
     runs-on: ubuntu-latest
     steps:

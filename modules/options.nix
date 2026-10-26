@@ -26,6 +26,8 @@ in
       description = "Disk the system was installed on.";
     };
 
+    private.enable = lib.mkEnableOption "the private overlay of the machine flake (set by mkHost)";
+
     repo = lib.mkOption {
       type = lib.types.str;
       default = "github:tran-engineering/nixos-central";

@@ -208,8 +208,12 @@ not taken from `pkgs.unstable` stays on the system's NixOS release:
 home.packages = [ pkgs.unstable.helix ];
 ```
 
-Permanent changes go through a pull request to this repository. To try a
-package without changing anything:
+This repository holds only what is useful to anyone. Your own setup (which
+modules you use, your name and email, fonts, themes, work files) belongs in
+your [private overlay](#private-overlay), not in a profile here.
+
+Permanent changes to shared configuration go through a pull request to this
+repository. To try a package without changing anything:
 
 ```sh
 nix-shell -p ripgrep          # or: nix shell nixpkgs#ripgrep
@@ -245,21 +249,22 @@ icons render whatever main font you choose. To use your own tide prompt, run
 `modules/home/fish/tide.fish`, and point
 `xdg.configFile."fish/conf.d/tide.fish".source` at it.
 
-Import each module you want:
+Pick modules by name with `centralModules`, which every profile and private
+overlay receives:
 
 ```nix
-# users/alice/default.nix
+# homeModules.default of your private overlay
+{ centralModules, ... }:
 {
-  imports = [
-    ../_default
-    ../../modules/home/dev-cli
-    ../../modules/home/git.nix
-    ../../modules/home/godot.nix
-  ];
+  imports = with centralModules; [ dev-cli git godot ];
 }
 ```
 
-The modules set no names or emails; put those in your profile. Their workflow
+Profiles inside this repository can do the same, or import by path
+(`../../modules/home/dev-cli`). The module names are an interface for overlays:
+renaming or removing one is a breaking change.
+
+The modules set no names or emails; put those in your overlay. Their workflow
 defaults (git, jj, and Node.js 24 in `dev-cli`) are overridden by setting the
 same option:
 
@@ -283,6 +288,60 @@ prints the `chsh` command instead. Selecting a shell installs it; import the
 
 Profiles named `ci-*` (e.g. `users/ci-user`) exist only for tests and are not
 offered by the home installer.
+
+### Private overlay
+
+Your own setup lives in a private repository you control: which shared
+modules you use, your login shell, name and email, fonts and themes, and files
+that must not be public (work SSH configuration, internal scripts). It is added
+to a machine after installation and applied on top of the default profile.
+
+The overlay is a flake **without inputs** that only exports modules; packages
+and options come from this repository:
+
+```nix
+# flake.nix in your private repository
+{
+  outputs = _: {
+    homeModules.default = { centralModules, pkgs, ... }: {
+      imports = with centralModules; [ dev-cli git fish ghostty ];
+      nixos-central.shell = "fish";
+      programs.git.settings.user = { name = "Alice"; email = "alice@example.com"; };
+      home.file.".ssh/config".source = ./ssh/config;
+    };
+    # Optional, NixOS machines only:
+    # nixosModules.default = { ... }: { };
+  };
+}
+```
+
+Set it up after the first boot (NixOS) or after `home-only.sh` (other
+distributions):
+
+1. Copy your SSH key to `~/.ssh/id_ed25519`. It must have no passphrase,
+   because daily updates fetch the overlay without you. Its public key must be
+   added to your GitHub account.
+2. Run:
+
+   ```sh
+   nixos-central-private setup git+ssh://git@github.com/alice/private
+   ```
+
+   It checks that the key can read the repository, adds the overlay to
+   `/etc/nixos/flake.nix` (or `~/.config/home-manager/flake.nix`) and
+   activates it. If anything fails, the flake is left as it was.
+
+From then on, daily updates and `nixos-central-upgrade` update the overlay
+together with this repository. On NixOS they run as root, which uses your
+`~/.ssh/id_ed25519` for GitHub only.
+
+If the overlay can't be fetched (key removed from GitHub, repository renamed),
+updates **stop** instead of continuing without it: the machine keeps running
+its current configuration, and `systemctl status nixos-upgrade` shows the
+error. Fix access, or take the overlay out with `nixos-central-private remove`.
+
+Losing a machine means its key can read the repository: remove that key from
+your GitHub account.
 
 ## Updates
 
@@ -324,8 +383,11 @@ shellcheck nixos-central-internal/installer/home-only.sh
 
 Sample hosts used in CI: `ci-gnome`, `ci-kde`, `ci-niri-noctalia`, `ci-none`, `ci-default-profile`
 (`nixosConfigurations`, not meant to be installed). Sample standalone homes:
-`ci-home-default`, `ci-home-renamed`, `ci-home-aarch64`, `ci-home-kt-aarch64`
+`ci-home-default`, `ci-home-renamed`, `ci-home-aarch64`, `ci-home-modules-aarch64`
 (`homeConfigurations`). Every selectable profile is also evaluated standalone
-(`home-profile-<name>` checks) and the `kt` profile on NixOS (`host-eval-kt`).
-These checks don't build the profiles' packages; those come from the NixOS
-binary cache.
+(`home-profile-<name>` checks). The test profile `users/ci-modules` uses every
+shared module and is evaluated on NixOS and standalone (`host-eval-ci-modules`,
+`home-eval-ci-modules`). `central-modules` guards the module names overlays
+rely on; `overlay-eval` and `overlay-rejects-inputs` test private overlays with
+`nixos-central-internal/tests/overlay`. These checks don't build packages;
+those come from the NixOS binary cache.
