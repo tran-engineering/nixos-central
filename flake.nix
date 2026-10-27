@@ -254,7 +254,13 @@
         // nixpkgs.lib.mapAttrs' (
           name: home: nixpkgs.lib.nameValuePair "home-eval-${name}" (evalOnly "home-eval-${name}" home.activationPackage)
         ) (nixpkgs.lib.filterAttrs (_: home: home.pkgs.stdenv.hostPlatform.system != system) self.homeConfigurations)
-        // import ./nixos-central-internal/tests { inherit inputs system; }
+        // (import ./nixos-central-internal/tests { inherit inputs system; }).checks
       );
+
+      # Tests that boot full desktops, run on demand (README, "Development"):
+      # nix build .#desktopTests.reboot-notify-kde
+      legacyPackages = forAllSystems (system: {
+        desktopTests = (import ./nixos-central-internal/tests { inherit inputs system; }).desktop;
+      });
     };
 }

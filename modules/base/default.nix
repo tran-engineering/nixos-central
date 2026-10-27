@@ -7,6 +7,7 @@
     ./reboot-notify.nix
     ./try.nix
     ./upgrade.nix
+    ./diff.nix
     ./private.nix
     ./unstable.nix
     ./graphical.nix

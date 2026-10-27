@@ -26,14 +26,23 @@ let
 
       notify-send --app-name="nixos-central" --icon=system-reboot \
         "Update ready – reboot when convenient" \
-        "A system update has been installed and will be used after the next reboot."
+        "A system update has been installed and will be used after the next reboot. Run nixos-central-diff to see what it changes."
       printf '%s\n' "$staged" > "$marker"
       echo "notified about $staged"
     '';
   };
 in
 {
-  config = lib.mkIf (config.nixos-central.desktop != "none") {
+  # Lets the minimal VM test use the notifier without a desktop.
+  options.nixos-central.rebootNotify.enable = lib.mkOption {
+    type = lib.types.bool;
+    default = config.nixos-central.desktop != "none";
+    defaultText = lib.literalExpression ''config.nixos-central.desktop != "none"'';
+    internal = true;
+    description = "Whether to notify the desktop user about a staged update.";
+  };
+
+  config = lib.mkIf config.nixos-central.rebootNotify.enable {
     systemd.user.services.nixos-central-reboot-notify = {
       description = "Notify about a staged system update";
       serviceConfig = {

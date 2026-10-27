@@ -35,6 +35,8 @@ in
       nix = config.nix.package;
       home-manager = config.programs.home-manager.package;
     })
+    # What the last update changed.
+    (pkgs.callPackage ../../nixos-central-internal/diff { mode = "home"; })
   ];
 
   # Daily: bump the `central` input (and the private overlay, if any) in

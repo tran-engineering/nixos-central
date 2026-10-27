@@ -103,6 +103,7 @@ Run by hand:
 ```sh
 nixos-central-upgrade             # update now (central, and your private overlay if any)
 nixos-central-upgrade --private   # update only the private overlay
+nixos-central-diff                # packages the last update changed
 home-manager generations          # then run <generation path>/activate to roll back
 ```
 
@@ -395,6 +396,11 @@ your GitHub account.
   the next boot**. The running system is not changed and the computer is never
   rebooted automatically.
 - Desktop users get a notification *"Update ready – reboot when convenient"*.
+- See which packages an update changes (as `nh` shows them): `nixos-central-diff`.
+  While an update waits for a reboot, it compares the running system with it
+  (*"Pending on next reboot"*); otherwise it shows what the last update changed
+  (*"Changes from generation 40 to 41"*). No `sudo` needed. The notification
+  mentions the command.
 - If an update is broken, choose the previous entry in the boot menu, or go
   back to the previous generation right away with
   `sudo nixos-rebuild switch --rollback`.
@@ -447,6 +453,7 @@ open a pull request when happy.
 ```sh
 nix flake check                       # evaluates and builds sample hosts, runs VM tests
 nix build .#checks.x86_64-linux.shells
+nix build .#desktopTests.reboot-notify-kde   # full KDE/GNOME desktop tests, not in flake check (10–15 min each)
 nix run --impure -f nixos-central-internal/tests/e2e   # full installer test in QEMU (needs KVM + internet)
 shellcheck nixos-central-internal/installer/install.sh
 shellcheck nixos-central-internal/installer/home-only.sh
@@ -462,3 +469,6 @@ shared module and is evaluated on NixOS and standalone (`host-eval-ci-modules`,
 rely on; `overlay-eval` and `overlay-rejects-inputs` test private overlays with
 `nixos-central-internal/tests/overlay`. These checks don't build packages;
 those come from the NixOS binary cache.
+The update notification is tested headless with a stub notification server
+(`reboot-notify`); `desktopTests.reboot-notify-kde` and `-gnome` check it in a
+real desktop session and are run by hand, as CI runs only `nix flake check`.
