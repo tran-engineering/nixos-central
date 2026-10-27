@@ -30,7 +30,7 @@
 ## 6. Profiles in overlays
 
 - [x] 6.1 Resolve the overlay profile in `mkHost` (user) and `mkHome` (profile fact, else user): `homeModules.<name>`, else `homeModules.default`, else throw listing the overlay's profiles; `mkHome` warns about a missing profile only if neither central nor the overlay has it; verify with eval checks for: profile match, fallback to `default`, no match (fails), standalone overlay-only profile without warning
-- [ ] 6.2 Add `--profile NAME` to `nixos-central-private setup` (standalone only; rewrites the `profile = "...";` line; refused on NixOS); verify with the stub test of the editing logic, and extend the CI `home-installer` step to set up the test overlay with `--profile` and check that profile's file
+- [x] 6.2 Add `--profile NAME` to `nixos-central-private setup` (standalone only; rewrites the `profile = "...";` line; refused on NixOS); verify with the stub test of the editing logic, and extend the CI `home-installer` step to set up the test overlay with `--profile` and check that profile's file
 - [x] 6.3 Update the README "Private overlay" section (profiles per user, `users/<name>` layout, fallback and failure, `--profile` on standalone homes); verify the example overlay flake evaluates with `mkHome`
 
 ## Workflow follow-up

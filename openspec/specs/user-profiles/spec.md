@@ -39,7 +39,7 @@ The choice between personal and default profile SHALL be made each time the syst
 - **THEN** her machine uses `alice`'s profile after its next update, with no edit to `/etc/nixos`
 
 ### Requirement: Customization happens in the central repository
-Persistent customization of a user's environment SHALL be done only by changing the user's profile in the central repository. Neither the machine-local flake nor the local flake of a standalone home MUST provide a user-level customization layer.
+Persistent customization of a user's environment SHALL be done by changing the user's profile in the central repository, or in the user's private overlay (see `private-overlay`). Apart from declaring that one overlay, neither the machine-local flake nor the local flake of a standalone home MUST provide a user-level customization layer.
 
 #### Scenario: User wants a permanent new package
 - **WHEN** a user wants a package available permanently
@@ -48,6 +48,10 @@ Persistent customization of a user's environment SHALL be done only by changing 
 #### Scenario: Standalone home wants a new package
 - **WHEN** a user of a standalone home wants a package available permanently
 - **THEN** the documented path is a change to their profile in the central repository, not an edit to `~/.config/home-manager`
+
+#### Scenario: Private file
+- **WHEN** a user wants a file on their machines that must not be public, such as a work SSH configuration
+- **THEN** the documented path is their private overlay
 
 ### Requirement: Profiles can use packages from nixpkgs-unstable
 User profiles and NixOS modules in the central repository SHALL be able to refer to packages of the locked nixpkgs-unstable input as `pkgs.unstable.<name>`, with the same package configuration (e.g. unfree allowed) as the stable packages. Packages that are not referred to this way MUST come from the stable nixpkgs.
@@ -76,7 +80,7 @@ Every profile in the central repository, including the shared default profile, S
 - **THEN** it builds and activates
 
 ### Requirement: Standalone homes choose their profile
-A standalone home SHALL use the profile recorded in its local flake, independent of the login name. If no profile is recorded, the profile named like the login name SHALL be used, and the shared default profile if none exists. The choice is resolved each time the home is built.
+A standalone home SHALL use the profile recorded in its local flake, independent of the login name. If no profile is recorded, the profile named like the login name SHALL be used, and the shared default profile if none exists. The same name selects the profile of the home's private overlay (see `private-overlay`). The choice is resolved each time the home is built.
 
 #### Scenario: Profile differs from login name
 - **WHEN** the standalone home of `khoi.tran` records profile `kt`
@@ -85,6 +89,10 @@ A standalone home SHALL use the profile recorded in its local flake, independent
 #### Scenario: Recorded profile removed later
 - **WHEN** the profile recorded in a standalone home is removed from the central repository
 - **THEN** the home's next build uses the shared default profile and warns that the recorded profile no longer exists
+
+#### Scenario: Profile exists only in the private overlay
+- **WHEN** a standalone home records profile `kt`, the central repository has no `kt` profile, and the home's private overlay has one
+- **THEN** the home is built from the shared default profile plus the overlay's `kt` profile, without a warning
 
 ### Requirement: Selectable profile list
 The central repository SHALL expose the names of the profiles a user can select: every personal profile plus the shared default profile, excluding profiles that exist only for testing.

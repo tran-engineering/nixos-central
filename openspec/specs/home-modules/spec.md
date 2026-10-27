@@ -29,15 +29,19 @@ Shared modules SHALL NOT be offered or resolved as profiles. Adding a shared mod
 - **THEN** that user gets the shared default profile, not the `dev-cli` module
 
 ### Requirement: Shared modules work on NixOS and standalone
-Every shared module SHALL build as part of a profile on a NixOS machine and in a standalone home on `x86_64-linux`, and SHALL evaluate in a standalone home on `aarch64-linux`.
+Every shared module SHALL build as part of a profile on a NixOS machine and in a standalone home on `x86_64-linux`, and SHALL evaluate in a standalone home on `aarch64-linux`. The central repository SHALL verify this with a test profile that includes every shared module, independent of any personal profile.
 
 #### Scenario: Same module on both
-- **WHEN** profile `kt` includes all shared modules and is used by NixOS machine `foo` and a standalone home on Ubuntu
+- **WHEN** a profile includes all shared modules and is used by NixOS machine `foo` and a standalone home on Ubuntu
 - **THEN** both build, and both contain the tools and settings of the included modules
 
 #### Scenario: ARM standalone home
-- **WHEN** a standalone home on `aarch64-linux` uses profile `kt`
+- **WHEN** a standalone home on `aarch64-linux` uses a profile that includes all shared modules
 - **THEN** its configuration evaluates without errors
+
+#### Scenario: No personal profile in the repository
+- **WHEN** the central repository contains no personal profile at all
+- **THEN** every shared module is still evaluated by the repository's checks
 
 ### Requirement: Module defaults can be overridden
 Settings that a shared module makes about how a tool behaves (as opposed to which tools are installed) SHALL be defaults that the including profile can override by setting the same option, without forcing.
