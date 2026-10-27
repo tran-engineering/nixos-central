@@ -313,6 +313,129 @@ in
     '';
   };
 
+  # The update notice of a standalone home, against fake state.
+  update-notice-script =
+    let
+      notice =
+        (central.mkHome {
+          user = "alice";
+          homeDirectory = "/home/alice";
+          stateVersion = central.release;
+          inherit system;
+        }).config.nixos-central.updateNotice.package;
+    in
+    pkgs.runCommand "update-notice-script" { } ''
+      set -euo pipefail
+      now=$(date +%s)
+      day=86400
+      mkdir -p p gen1 gen2
+      ln -s "$PWD/gen1" p/home-manager-1-link
+      ln -s "$PWD/gen2" p/home-manager-2-link
+      ln -s home-manager-2-link p/home-manager
+      touch -h -d @$((now - 20 * day)) p/home-manager-1-link
+      echo "{\"nodes\":{\"central\":{\"locked\":{\"lastModified\":$((now - 16 * day))}}}}" > flake.lock
+      export NIXOS_CENTRAL_NOTICE_PROFILE=$PWD/p/home-manager NIXOS_CENTRAL_NOTICE_LOCK=$PWD/flake.lock \
+        NIXOS_CENTRAL_NOTICE_STAMP=$PWD/stamp NIXOS_CENTRAL_NOTICE_NOW=$now
+      # Never any error output, and exit status 0 (recorded in ./status).
+      notice() { ${lib.getExe notice} 2>stderr; echo $? > status; }
+      expect() {
+        [ "$1" = "$2" ] || { printf 'expected: %s\n     got: %s\n' "$1" "$2"; exit 1; }
+        [ ! -s stderr ] && [ "$(cat status)" = 0 ] || { cat stderr; echo "exit status $(cat status)"; exit 1; }
+      }
+
+      # stale: all three ages and the home-manager hint
+      touch -h -d @$((now - 15 * day)) p/home-manager-2-link
+      touch -d @$((now - 9 * day)) stamp
+      expect "nixos-central: last successful update 9 days ago (home configuration installed 15 days ago, central revision committed 16 days ago).
+      Check the daily update: systemctl --user status home-manager-auto-upgrade" "$(notice)"
+
+      # threshold set by the profile
+      expect "" "$(NIXOS_CENTRAL_NOTICE_DAYS=14 notice)"
+      expect "" "$(NIXOS_CENTRAL_NOTICE_DAYS=0 notice)"
+
+      # recent successful update, although generation and central revision are old
+      touch -d @$((now - day)) stamp
+      expect "" "$(notice)"
+
+      # recent generation (manual switch), although the recorded update is old
+      touch -d @$((now - 9 * day)) stamp
+      touch -h -d @$((now - 2 * day)) p/home-manager-2-link
+      expect "" "$(notice)"
+
+      # unreadable lock file: central age left out
+      touch -h -d @$((now - 15 * day)) p/home-manager-2-link
+      expect "nixos-central: last successful update 9 days ago (home configuration installed 15 days ago)." \
+        "$(NIXOS_CENTRAL_NOTICE_LOCK=$PWD/missing notice | head -1)"
+
+      # nothing known: silent
+      expect "" "$(HOME=$PWD USER=nobody NIXOS_CENTRAL_NOTICE_STAMP=$PWD/none NIXOS_CENTRAL_NOTICE_PROFILE=$PWD/none notice)"
+
+      touch $out
+    '';
+
+  # New terminals of the primary user tell when updates stopped; successful
+  # automatic upgrades are recorded.
+  update-notice = runTest {
+    name = "nixos-central-update-notice";
+    nodes.machine =
+      { lib, pkgs, ... }:
+      {
+        imports = [ (testHost { desktop = "none"; }) ];
+        virtualisation.memorySize = 2048;
+        virtualisation.additionalPaths = [ (pkgs.writeTextDir "fake-system" "staged") ];
+        # Stands in for the upgrade: succeeds once /tmp/upgrade-ok exists.
+        systemd.services.nixos-upgrade.script = lib.mkForce "test -e /tmp/upgrade-ok";
+      };
+    testScript =
+      { nodes, ... }:
+      let
+        fake = builtins.head nodes.machine.virtualisation.additionalPaths;
+      in
+      ''
+        def terminal():
+            return machine.succeed("su - alice -c 'bash -i -c true' 2>/dev/null")
+
+        machine.wait_for_unit("multi-user.target")
+        machine.succeed("systemctl stop nixos-upgrade.timer nixos-upgrade.service")
+        machine.succeed("rm -f /var/lib/nixos-central/last-update")
+        # An installed machine whose last update was 15 days ago.
+        machine.succeed(
+            "nix-env -p /nix/var/nix/profiles/system --set $(readlink -f /run/booted-system)",
+            "touch -h -d '15 days ago' /nix/var/nix/profiles/system-1-link",
+            "mkdir -p /etc/nixos",
+            "echo \"{\\\"nodes\\\":{\\\"central\\\":{\\\"locked\\\":{\\\"lastModified\\\":$(date -d '16 days ago' +%s)}}}}\" > /etc/nixos/flake.lock",
+        )
+
+        with subtest("stale: notice with ages and upgrade hint"):
+            out = terminal()
+            assert "last successful update 15 days ago (running system installed 15 days ago, central revision committed 16 days ago)" in out, out
+            assert "nixos-central-upgrade" in out, out
+
+        with subtest("not in non-interactive shells"):
+            out = machine.succeed("su - alice -c 'bash -c true' 2>&1")
+            assert "nixos-central" not in out, out
+
+        with subtest("staged generation: reboot hint"):
+            machine.succeed(
+                "nix-env -p /nix/var/nix/profiles/system --set ${fake}",
+                "touch -h -d '8 days ago' /nix/var/nix/profiles/system-2-link",
+            )
+            out = terminal()
+            assert "last successful update 8 days ago" in out and "reboot" in out, out
+
+        with subtest("failed upgrade is not recorded"):
+            machine.fail("systemctl start nixos-upgrade.service")
+            machine.fail("test -e /var/lib/nixos-central/last-update")
+            assert "last successful update 8 days ago" in terminal()
+
+        with subtest("successful upgrade is recorded: no notice"):
+            machine.succeed("touch /tmp/upgrade-ok", "systemctl start nixos-upgrade.service")
+            machine.succeed("test -e /var/lib/nixos-central/last-update")
+            out = terminal()
+            assert "nixos-central" not in out, out
+      '';
+  };
+
   reboot-notify-kde = rebootNotify { desktop = "kde"; };
   reboot-notify-gnome = rebootNotify { desktop = "gnome"; };
 }

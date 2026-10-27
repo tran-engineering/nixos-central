@@ -35,6 +35,7 @@ in
     sharedModules = [
       ./home/shell.nix
       ./home/private.nix
+      ./home/update-notice.nix
       inputs.plasma-manager.homeModules.plasma-manager
     ];
     users.${user} = {

@@ -14,4 +14,11 @@
     persistent = true;
     randomizedDelaySec = "30min";
   };
+
+  # Record every successful run, also when nothing changed, for the update notice
+  # (modules/home/update-notice.nix). postStart only runs if the upgrade succeeded.
+  systemd.services.nixos-upgrade.postStart = ''
+    mkdir -p /var/lib/nixos-central
+    touch /var/lib/nixos-central/last-update
+  '';
 }

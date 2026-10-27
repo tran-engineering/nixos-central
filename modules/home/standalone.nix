@@ -1,6 +1,6 @@
 # Home-manager module for standalone homes (lib.mkHome) on Linux distributions
 # other than NixOS. Facts (user, home directory, NVIDIA driver) are set by mkHome.
-{ config, pkgs, ... }:
+{ config, lib, pkgs, ... }:
 {
   # Integrates with the host: XDG paths, and GPU drivers for Nix programs after
   # a one-time `sudo non-nixos-gpu-setup` (offered by home-only.sh).
@@ -39,4 +39,15 @@
       "backup"
     ];
   };
+
+  # Record every successful run, also when nothing changed, for the update
+  # notice (update-notice.nix). ExecStartPost only runs if the upgrade succeeded.
+  systemd.user.services.home-manager-auto-upgrade.Service.ExecStartPost = toString (
+    pkgs.writeShellScript "home-manager-auto-upgrade-record" ''
+      stamp=${lib.escapeShellArg config.nixos-central.updateNotice.stamp}
+      ${pkgs.coreutils}/bin/mkdir -p "$(${pkgs.coreutils}/bin/dirname "$stamp")"
+      ${pkgs.coreutils}/bin/touch "$stamp"
+    ''
+  );
+  nixos-central.updateNotice.standalone = true;
 }

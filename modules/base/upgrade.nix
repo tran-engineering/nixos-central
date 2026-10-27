@@ -55,6 +55,10 @@ let
         exit 1
       fi
 
+      # Seen by the update notice (modules/home/update-notice.nix).
+      mkdir -p /var/lib/nixos-central
+      touch /var/lib/nixos-central/last-update
+
       echo
       echo "The latest update is active."
       if [ "$(readlink -f /run/booted-system/kernel)" != "$(readlink -f /run/current-system/kernel)" ]; then

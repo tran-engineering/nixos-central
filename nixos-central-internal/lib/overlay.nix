@@ -9,6 +9,7 @@ let
     "standalone.nix"
     "shell.nix"
     "private.nix"
+    "update-notice.nix"
   ];
   entries = lib.filterAttrs (name: _: !(builtins.elem name internal)) (builtins.readDir homeDir);
 in

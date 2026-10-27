@@ -96,6 +96,8 @@ Files in your home that the profile takes over (e.g. `~/.bashrc`) are kept as
 The home's facts live in `~/.config/home-manager/flake.nix` (login name, home
 directory, profile, NVIDIA driver); everything else comes from this repository.
 It updates itself daily (`systemctl --user list-timers home-manager-auto-upgrade.timer`).
+New terminals tell you when it has not managed to update for a while
+([update notice](#updates)).
 Run by hand:
 
 ```sh
@@ -395,6 +397,17 @@ your GitHub account.
   also becomes the default for the next boot. Switching may restart services
   (and the desktop), so save your work first. A new kernel is used only after
   the next reboot; the command says so when that applies.
+- When no update has succeeded for more than 7 days, every new terminal says so,
+  with what to do (reboot into a staged update, run `nixos-central-upgrade`, or
+  check the daily update). It also shows how old the running system and the
+  pinned revision of this repository are. A successful daily update counts even
+  if nothing changed, so a quiet repository causes no notice. Homes on
+  [other distributions](#install-on-another-linux-distribution) get the same
+  notice. Change the number of days in your profile, `0` turns it off:
+
+  ```nix
+  nixos-central.updateNotice.days = 14;
+  ```
 
 ### Trying a branch
 
