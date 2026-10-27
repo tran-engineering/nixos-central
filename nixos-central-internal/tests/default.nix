@@ -28,6 +28,10 @@ let
       };
       nix.settings.substituters = lib.mkForce [ ];
       nix.settings.flake-registry = ""; # offline VM: no global registry download
+      # The VM's store has less than min-free available; automatic collection
+      # during builds would delete paths the tests add (additionalPaths) and
+      # cannot rebuild offline.
+      nix.settings.min-free = lib.mkForce 0;
     };
 
   # Nodes evaluate their own nixpkgs (the base sets nixpkgs.config).
@@ -592,9 +596,6 @@ in
         {
           imports = [ (testHost { desktop = "none"; }) ];
           virtualisation.memorySize = 2048;
-          # The VM's store has less than min-free available; automatic collection
-          # during builds would delete the fake generations before they are set.
-          nix.settings.min-free = lib.mkForce 0;
           # A real ESP, so the boot menu can be checked.
           virtualisation.useBootLoader = true;
           virtualisation.useEFIBoot = true;
