@@ -1,6 +1,10 @@
 # Home-manager module for standalone homes (lib.mkHome) on Linux distributions
 # other than NixOS. Facts (user, home directory, NVIDIA driver) are set by mkHome.
 { config, lib, pkgs, ... }:
+let
+  # Inputs the daily upgrade and nixos-central-upgrade update (and nothing else).
+  updateInputs = [ "central" ] ++ lib.optional config.nixos-central.private.enable "private";
+in
 {
   # Integrates with the host: XDG paths, and GPU drivers for Nix programs after
   # a one-time `sudo non-nixos-gpu-setup` (offered by home-only.sh).
@@ -20,8 +24,18 @@
   # home-manager CLI for manual switches and rollbacks.
   programs.home-manager.enable = true;
 
-  # Adds or removes the private overlay (README, "Private overlay").
-  home.packages = [ (pkgs.callPackage ../../nixos-central-internal/private { }) ];
+  home.packages = [
+    # Adds or removes the private overlay (README, "Private overlay").
+    (pkgs.callPackage ../../nixos-central-internal/private { })
+    # The daily upgrade below, right now.
+    (pkgs.callPackage ../../nixos-central-internal/home-upgrade {
+      inherit updateInputs;
+      inherit (config.services.home-manager.autoUpgrade) flakeDir;
+      switchFlags = config.services.home-manager.autoUpgrade.flags;
+      nix = config.nix.package;
+      home-manager = config.programs.home-manager.package;
+    })
+  ];
 
   # Daily: bump the `central` input (and the private overlay, if any) in
   # ~/.config/home-manager and switch to it.
@@ -31,9 +45,7 @@
     enable = true;
     frequency = "daily";
     useFlake = true;
-    preSwitchCommands = [
-      (if config.nixos-central.private.enable then "nix flake update central private" else "nix flake update central")
-    ];
+    preSwitchCommands = [ "nix flake update ${lib.concatStringsSep " " updateInputs}" ];
     flags = [
       "-b"
       "backup"

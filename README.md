@@ -101,8 +101,9 @@ New terminals tell you when it has not managed to update for a while
 Run by hand:
 
 ```sh
-nix flake update central --flake ~/.config/home-manager && home-manager switch --flake ~/.config/home-manager   # update now
-home-manager generations                     # then run <generation path>/activate to roll back
+nixos-central-upgrade             # update now (central, and your private overlay if any)
+nixos-central-upgrade --private   # update only the private overlay
+home-manager generations          # then run <generation path>/activate to roll back
 ```
 
 Old generations are cleaned up weekly, as on NixOS ([Updates](#updates)):
@@ -375,7 +376,9 @@ distributions):
 
 From then on, daily updates and `nixos-central-upgrade` update the overlay
 together with this repository. On NixOS they run as root, which uses your
-`~/.ssh/id_ed25519` for GitHub only.
+`~/.ssh/id_ed25519` for GitHub only. After pushing a change to the overlay,
+`nixos-central-upgrade --private` uses it right away without updating this
+repository.
 
 If the overlay can't be fetched (key removed from GitHub, repository renamed),
 updates **stop** instead of continuing without it: the machine keeps running
@@ -413,6 +416,9 @@ your GitHub account.
   also becomes the default for the next boot. Switching may restart services
   (and the desktop), so save your work first. A new kernel is used only after
   the next reboot; the command says so when that applies.
+  `nixos-central-upgrade --private` updates only your
+  [private overlay](#private-overlay) and leaves this repository at the
+  installed revision. Standalone homes have the same command (no `sudo`).
 - When no update has succeeded for more than 7 days, every new terminal says so,
   with what to do (reboot into a staged update, run `nixos-central-upgrade`, or
   check the daily update). It also shows how old the running system and the

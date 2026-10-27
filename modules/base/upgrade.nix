@@ -16,11 +16,27 @@ let
       config.systemd.package
     ];
     text = ''
-      if [ $# -ne 0 ]; then
-        echo "usage: nixos-central-upgrade" >&2
-        echo "Installs the latest ${config.nixos-central.repo} and uses it right away." >&2
-        exit 2
-      fi
+      update_flags=(${lib.escapeShellArgs (import ./central-update-flags.nix config)})
+      case "$*" in
+        "") ;;
+        --private)
+          ${
+            if config.nixos-central.private.enable then
+              "update_flags=(--update-input private)"
+            else
+              ''
+                echo "This machine has no private overlay (add one with: nixos-central-private setup)." >&2
+                exit 1
+              ''
+          }
+          ;;
+        *)
+          echo "usage: nixos-central-upgrade [--private]" >&2
+          echo "Installs the latest ${config.nixos-central.repo} and uses it right away." >&2
+          echo "  --private  update only the private overlay; central stays as it is" >&2
+          exit 2
+          ;;
+      esac
 
       if [ "$(id -u)" -ne 0 ]; then
         exec sudo "$0" "$@"
@@ -44,7 +60,7 @@ let
 
       if ! nixos-rebuild switch \
         --flake "/etc/nixos#${config.nixos-central.hostname}" \
-        ${lib.escapeShellArgs (import ./central-update-flags.nix config)} \
+        "''${update_flags[@]}" \
         --refresh; then
         if [ "$(readlink /nix/var/nix/profiles/system || true)" = "$profile_before" ]; then
           cp "$backup" "$lock"
