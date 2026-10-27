@@ -436,6 +436,121 @@ in
       '';
   };
 
+  # Weekly garbage collection keeps rollback targets: the generations of the last
+  # 30 days, the one active 30 days ago, and the booted/running one.
+  gc =
+    let
+      disabled = lib.nixosSystem {
+        specialArgs = { inherit inputs; };
+        modules = [
+          (testHost { desktop = "none"; })
+          { nixos-central.gc.enable = false; }
+        ];
+      };
+    in
+    assert lib.assertMsg (
+      !(disabled.config.systemd.timers ? nixos-central-gc)
+    ) "nixos-central.gc.enable = false must remove the timer";
+    runTest {
+      name = "nixos-central-gc";
+      nodes.machine =
+        { lib, ... }:
+        {
+          imports = [ (testHost { desktop = "none"; }) ];
+          virtualisation.memorySize = 2048;
+          # The VM's store has less than min-free available; automatic collection
+          # during builds would delete the fake generations before they are set.
+          nix.settings.min-free = lib.mkForce 0;
+          # A real ESP, so the boot menu can be checked.
+          virtualisation.useBootLoader = true;
+          virtualisation.useEFIBoot = true;
+        };
+      testScript = ''
+        system = "/nix/var/nix/profiles/system"
+
+        def fake_generation(n):
+            """A store path that looks like a system (all of the real one but bin/)."""
+            return machine.succeed(
+                f"d=/tmp/fake-{n}; mkdir $d && "
+                f"for f in /run/booted-system/*; do [ $(basename $f) = bin ] || ln -s $(readlink -f $f) $d/; done && "
+                f"echo {n} > $d/fake && nix-store --add $d"
+            ).strip()
+
+        def set_generation(path, days_ago):
+            machine.succeed(f"nix-env -p {system} --set {path}")
+            n = int(machine.succeed(f"readlink {system}").strip().split("-")[1])
+            machine.succeed(f"touch -h -d '{days_ago} days ago' {system}-{n}-link")
+            return n
+
+        def generations():
+            return sorted(int(l.split("-")[1]) for l in machine.succeed("ls /nix/var/nix/profiles | grep '^system-.*-link$'").split())
+
+        def entries():
+            return machine.succeed("ls /boot/loader/entries").split()
+
+        machine.wait_for_unit("multi-user.target")
+        machine.succeed("systemctl list-timers nixos-central-gc.timer | grep nixos-central-gc")
+        machine.succeed("systemctl stop nixos-upgrade.timer nixos-central-gc.timer")
+        real = machine.succeed("readlink -f /run/booted-system").strip()
+
+        # The installed system (booted and running), 60 days old.
+        installed = generations()
+        for n in installed:
+            machine.succeed(f"touch -h -d '60 days ago' {system}-{n}-link")
+
+        with subtest("old generations go, rollback targets stay"):
+            fakes = [fake_generation(i) for i in (1, 2, 3)]
+            g45, g35, g20 = [set_generation(path, days) for path, days in zip(fakes, (45, 35, 20))]
+            current = set_generation(real, 2)
+            machine.succeed(f"{system}/bin/switch-to-configuration boot")
+            assert any(f"generation-{g45}." in e for e in entries()), entries()
+
+            machine.succeed("systemctl start nixos-central-gc.service")
+            after = generations()
+            assert g45 not in after, after
+            # active at the cutoff, younger, current, booted
+            for n in (g35, g20, current, *installed):
+                assert n in after, f"{n} missing from {after}"
+            machine.fail(f"test -e {fakes[0]}")
+            machine.succeed(f"test -e {fakes[1]}")
+            listed = entries()
+            assert not any(f"generation-{g45}." in e for e in listed), listed
+            assert any(f"generation-{g35}." in e for e in listed), listed
+            machine.succeed(f"grep -q 'nixos-generation-{current}' /boot/loader/loader.conf")
+
+        with subtest("the booted and running generation stays, although staged ones are newer"):
+            for n, days in ((g35, 60), (g20, 55), (current, 50)):
+                machine.succeed(f"touch -h -d '{days} days ago' {system}-{n}-link")
+            g_staged_old = set_generation(fake_generation(5), 45)
+            g_staged_new = set_generation(fake_generation(6), 1)
+            machine.succeed("systemctl start nixos-central-gc.service")
+            after = generations()
+            assert g35 not in after and g20 not in after, after
+            for n in (current, *installed, g_staged_old, g_staged_new):
+                assert n in after, f"{n} missing from {after}"
+
+        with subtest("the user's personal profile is collected by the user"):
+            alice = "su - alice -c"
+            machine.succeed("loginctl enable-linger alice")
+            machine.wait_for_unit("user@1000.service")
+            prof = "/home/alice/.local/state/nix/profiles/profile"
+            machine.succeed(f"{alice} 'mkdir -p $(dirname {prof})'")
+
+            def personal_generation(n, days_ago):
+                path = machine.succeed(f"{alice} 'd=$(mktemp -d); echo {n} > $d/fake; nix-store --add $d'").strip()
+                machine.succeed(f"{alice} 'nix-env -p {prof} --set {path}'")
+                g = int(machine.succeed(f"readlink {prof}").strip().split("-")[-2])
+                machine.succeed(f"touch -h -d '{days_ago} days ago' {prof}-{g}-link")
+                return g
+
+            p70, p60, p40, p3 = [personal_generation(n, n) for n in (70, 60, 40, 3)]
+            machine.succeed("systemctl --user -M alice@ start nix-gc.service")
+            after = sorted(int(l.split("-")[-2]) for l in machine.succeed(f"ls -d {prof}-*-link").split())
+            # active at the cutoff, and current
+            assert after == [p40, p3], after
+      '';
+    };
+
   reboot-notify-kde = rebootNotify { desktop = "kde"; };
   reboot-notify-gnome = rebootNotify { desktop = "gnome"; };
 }

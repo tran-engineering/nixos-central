@@ -105,6 +105,10 @@ nix flake update central --flake ~/.config/home-manager && home-manager switch -
 home-manager generations                     # then run <generation path>/activate to roll back
 ```
 
+Old generations are cleaned up weekly, as on NixOS ([Updates](#updates)):
+`home-manager generations` lists those of the last 30 days and the one in use 30
+days ago.
+
 **GPU drivers.** Graphical programs from Nix need the drivers set up once per
 machine: `sudo <path>/bin/non-nixos-gpu-setup` (the installer runs it or prints
 the exact command; home-manager reminds you when it is needed). With the
@@ -391,6 +395,18 @@ your GitHub account.
 - If an update is broken, choose the previous entry in the boot menu, or go
   back to the previous generation right away with
   `sudo nixos-rebuild switch --rollback`.
+- Old generations are cleaned up weekly: those of the last 30 days stay, and so
+  does the one that was in use 30 days ago, so there is always a previous
+  generation to go back to. The generation the machine is running or booted into
+  is never removed, even if newer updates are waiting for a reboot. Older ones
+  disappear from the boot menu. Your own `nix profile` installs are cleaned up
+  the same way. To keep more, or to turn it off, in a module of your machine
+  (`modules` in `/etc/nixos/flake.nix`) or in your profile:
+
+  ```nix
+  nixos-central.gc.keepDays = 90;           # machine; nixos-central.gc.enable = false; turns it off
+  nix.gc.options = "--delete-older-than 90d"; # profile; nix.gc.automatic = false; turns it off
+  ```
 - Stage the latest update for the next boot right away (like the daily run):
   `sudo systemctl start nixos-upgrade`.
 - Install the latest update **and use it now**: `nixos-central-upgrade`. It

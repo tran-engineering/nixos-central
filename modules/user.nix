@@ -36,6 +36,7 @@ in
       ./home/shell.nix
       ./home/private.nix
       ./home/update-notice.nix
+      ./home/gc.nix
       inputs.plasma-manager.homeModules.plasma-manager
     ];
     users.${user} = {

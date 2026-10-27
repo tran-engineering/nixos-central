@@ -10,6 +10,7 @@ let
     "shell.nix"
     "private.nix"
     "update-notice.nix"
+    "gc.nix"
   ];
   entries = lib.filterAttrs (name: _: !(builtins.elem name internal)) (builtins.readDir homeDir);
 in

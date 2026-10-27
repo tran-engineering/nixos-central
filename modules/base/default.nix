@@ -3,6 +3,7 @@
 {
   imports = [
     ./auto-upgrade.nix
+    ./gc.nix
     ./reboot-notify.nix
     ./try.nix
     ./upgrade.nix
