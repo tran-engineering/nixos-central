@@ -320,20 +320,20 @@ setup_gpu() {
   $command || info "GPU setup failed. Graphical programs may not start; retry with:  $command"
 }
 
-# Login shells provided by the profile that differ from the current one.
+# The login shell selected by the profile (nixos-central.shell), if it differs
+# from the current one. Changing it needs root, so only print how.
 shell_hint() {
-  local shell path bin
-  for shell in fish zsh nu; do
-    path=""
-    for bin in "$HOME/.nix-profile/bin" "$HOME/.local/state/nix/profile/bin"; do
-      [ -x "$bin/$shell" ] && path="$bin/$shell" && break
-    done
-    [ -n "$path" ] || continue
-    [ "$(basename "${SHELL:-}")" = "$shell" ] && continue
-    info ""
-    info "Your profile provides $shell. To make it your login shell:"
-    info "    echo $path | sudo tee -a /etc/shells && chsh -s $path"
+  local shell path="" bin
+  shell=$(nixx eval --raw "$HM_DIR#homeConfigurations.\"$USERNAME\".config.nixos-central.shell" 2>/dev/null) || return 0
+  [ "$shell" = bash ] && return 0
+  [ "$(basename "${SHELL:-}")" = "$shell" ] && return 0
+  for bin in "$HOME/.nix-profile/bin" "$HOME/.local/state/nix/profile/bin"; do
+    [ -x "$bin/$shell" ] && path="$bin/$shell" && break
   done
+  [ -n "$path" ] || return 0
+  info ""
+  info "Your profile selects $shell as login shell. To switch to it:"
+  info "    echo $path | sudo tee -a /etc/shells && chsh -s $path"
 }
 
 finish() {

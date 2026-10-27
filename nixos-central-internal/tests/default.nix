@@ -182,6 +182,117 @@ in
     '';
   };
 
+  # Upgrades of a machine with a private overlay: they update the overlay too,
+  # and an unreachable overlay stops them without changing anything.
+  overlay-upgrades = runTest {
+    name = "nixos-central-overlay-upgrades";
+    nodes.machine =
+      { pkgs, ... }:
+      {
+        imports = [
+          (testHost {
+            desktop = "none";
+            private = (import ./overlay/flake.nix).outputs { } // {
+              inputs = { };
+            };
+          })
+        ];
+        virtualisation.memorySize = 2048;
+        environment.systemPackages = [ pkgs.git ];
+      };
+    testScript = ''
+      git = "git -c user.name=t -c user.email=t@t -C"
+      def state():
+          return machine.succeed("md5sum /etc/nixos/flake.lock; readlink /nix/var/nix/profiles/system")
+
+      machine.wait_for_unit("multi-user.target")
+      machine.succeed("systemctl stop nixos-upgrade.timer nixos-upgrade.service")
+      machine.succeed("nix-env -p /nix/var/nix/profiles/system --set $(readlink -f /run/booted-system)")
+
+      # Stub central: reads the overlay (forcing its fetch), then fails instead of building.
+      machine.succeed(
+          "mkdir -p /tmp/central /tmp/private /etc/nixos",
+          "echo '{ outputs = _: { lib.mkHost = a: throw \"stub central, overlay ''${a.private.rev}\"; }; }' > /tmp/central/flake.nix",
+          "echo '{ outputs = _: { homeModules.default = { }; }; }' > /tmp/private/flake.nix",
+          f"{git} /tmp/central init -q && {git} /tmp/central add . && {git} /tmp/central commit -qm one",
+          f"{git} /tmp/private init -q && {git} /tmp/private add . && {git} /tmp/private commit -qm one",
+          "echo '{ inputs.central.url = \"git+file:///tmp/central\"; inputs.private.url = \"git+file:///tmp/private\"; outputs = { central, private, ... }: { nixosConfigurations.machine = central.lib.mkHost { inherit private; }; }; }' > /etc/nixos/flake.nix",
+          "nix flake lock /etc/nixos",
+      )
+
+      with subtest("a new overlay commit is picked up"):
+          machine.succeed(f"echo '# two' >> /tmp/private/flake.nix && {git} /tmp/private commit -qam two")
+          new_rev = machine.succeed(f"{git} /tmp/private rev-parse HEAD").strip()
+          before = state()
+          out = machine.fail("nixos-central-upgrade 2>&1")
+          assert "Updated input 'private'" in out and f"overlay {new_rev}" in out, out
+          assert state() == before, f"{before} != {state()}"
+
+      with subtest("an unreachable overlay stops both upgrade paths"):
+          machine.succeed("mv /tmp/private /tmp/private-gone")
+          before = state()
+          out = machine.fail("nixos-central-upgrade 2>&1")
+          assert "/tmp/private" in out and "nothing was changed" in out, out
+          assert state() == before, f"{before} != {state()}"
+          machine.fail("systemctl start nixos-upgrade.service")
+          assert "/tmp/private" in machine.succeed("journalctl -u nixos-upgrade.service")
+          assert state() == before, f"{before} != {state()}"
+
+      with subtest("root uses the primary user's key for GitHub"):
+          out = machine.succeed("ssh -G github.com")
+          assert "identityfile /home/alice/.ssh/id_ed25519" in out and "identitiesonly yes" in out, out
+          out = machine.succeed("su - alice -c 'ssh -G github.com'")
+          assert "identitiesonly no" in out, out
+    '';
+  };
+
+  # nixos-central-private setup changes nothing when the overlay can't be read or
+  # the configuration with it can't be activated (offline VM: it can't build).
+  # The successful setup is covered by the e2e test.
+  private-setup-failures = runTest {
+    name = "nixos-central-private-setup-failures";
+    nodes.machine =
+      { pkgs, ... }:
+      {
+        imports = [ (testHost { desktop = "none"; }) ];
+        virtualisation.memorySize = 2048;
+        environment.systemPackages = [ pkgs.git ];
+      };
+    testScript = ''
+      git = "git -c user.name=t -c user.email=t@t -C /tmp/private"
+      def state():
+          return machine.succeed("md5sum /etc/nixos/flake.nix /etc/nixos/flake.lock")
+
+      machine.wait_for_unit("multi-user.target")
+      # /etc/nixos as the installer writes it.
+      machine.succeed(
+          "mkdir -p /etc/nixos /tmp/private",
+          "sed -e 's|@CENTRAL@|github:tran-engineering/nixos-central|' -e 's|@HOSTNAME@|machine|g' -e 's|@USER@|alice|' "
+          + "-e 's|@DESKTOP@|none|' -e 's|@DESKTOPS@|none|' -e 's|@DISK@|/dev/vda|' -e 's|@STATE_VERSION@|26.05|' "
+          + "${../templates/host/flake.nix} > /etc/nixos/flake.nix",
+          "echo '{}' > /etc/nixos/flake.lock",
+          "echo '{ outputs = _: { homeModules.default = { }; }; }' > /tmp/private/flake.nix",
+          f"{git} init -q && {git} add . && {git} commit -qm one",
+      )
+
+      with subtest("unreachable overlay"):
+          before = state()
+          out = machine.fail("nixos-central-private setup git+file:///tmp/no-such-repo 2>&1")
+          assert "Cannot read git+file:///tmp/no-such-repo" in out and "/home/alice/.ssh/id_ed25519" in out, out
+          assert state() == before
+
+      with subtest("activation fails: flake and lock restored"):
+          out = machine.fail("nixos-central-private setup git+file:///tmp/private 2>&1")
+          assert "Restored /etc/nixos/flake.nix" in out, out
+          assert state() == before
+
+      with subtest("remove without overlay"):
+          out = machine.fail("nixos-central-private remove 2>&1")
+          assert "has no private overlay" in out, out
+          assert state() == before
+    '';
+  };
+
   # On an installed NixOS machine, both installers refuse before changing anything
   # (and before asking for root).
   home-installer-refuses-nixos = runTest {

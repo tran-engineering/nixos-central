@@ -7,7 +7,7 @@ Keeps every installed machine in sync with the central repository automatically 
 ## Requirements
 
 ### Requirement: Daily automatic upgrade staged for next boot
-Each machine SHALL check daily for a newer revision of the central repository, update its `central` input, and build the result as the default boot entry without activating it in the running system. A run missed while the machine was off MUST run soon after the machine is next online.
+Each machine SHALL check daily for a newer revision of the central repository, update its `central` input and, if declared, its `private` input, and build the result as the default boot entry without activating it in the running system. A run missed while the machine was off MUST run soon after the machine is next online.
 
 #### Scenario: Update available
 - **WHEN** the central repository has new commits and the daily upgrade runs
@@ -16,6 +16,10 @@ Each machine SHALL check daily for a newer revision of the central repository, u
 #### Scenario: Machine was off at scheduled time
 - **WHEN** a laptop was powered off during the scheduled upgrade time
 - **THEN** the upgrade runs shortly after the laptop is next booted
+
+#### Scenario: Overlay updated
+- **WHEN** a machine declares a private overlay that has new commits and the daily upgrade runs
+- **THEN** the staged generation contains the new overlay revision
 
 ### Requirement: No automatic reboot
 The automatic upgrade MUST NOT reboot the machine.
@@ -58,7 +62,7 @@ The system SHALL provide a command `nixos-central-try <branch>` that activates t
 - **THEN** the command fails with an error and the running system is unchanged
 
 ### Requirement: Upgrading immediately on demand
-The system SHALL provide a command `nixos-central-upgrade` that updates the `central` input in `/etc/nixos` to the latest revision of the central repository, activates the result in the running system, and makes it the default boot entry. It MUST update no input other than `central` and MUST NOT reboot the machine.
+The system SHALL provide a command `nixos-central-upgrade` that updates the `central` input in `/etc/nixos`, and the `private` input if declared, to their latest revisions, activates the result in the running system, and makes it the default boot entry. It MUST update no other input and MUST NOT reboot the machine.
 
 #### Scenario: Update available
 - **WHEN** the central repository has new commits and a user runs `nixos-central-upgrade`
@@ -85,7 +89,7 @@ The system SHALL provide a command `nixos-central-upgrade` that updates the `cen
 - **THEN** the command does not reboot and tells the user that the new kernel is used after the next reboot
 
 #### Scenario: Build fails
-- **WHEN** the configuration fails to build or the central repository cannot be fetched
+- **WHEN** the configuration fails to build, or the central repository or the private overlay cannot be fetched
 - **THEN** the command fails with an error, and the running system, the default boot entry and `/etc/nixos/flake.lock` are unchanged
 
 ### Requirement: No concurrent upgrades

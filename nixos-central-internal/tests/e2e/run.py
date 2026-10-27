@@ -18,6 +18,7 @@ import pexpect
 PORT = 8000
 HOST_IP = "10.0.2.2"  # the host as seen from QEMU user networking
 CENTRAL_URL = f"git+http://{HOST_IP}:{PORT}/cgi-bin/git/central.git"
+PRIVATE_URL = f"git+http://{HOST_IP}:{PORT}/cgi-bin/git/private.git"
 # Generated per run (see main) so they cannot occur in any source file that
 # ends up in the installed Nix store.
 LUKS = ""
@@ -87,6 +88,31 @@ class Repo:
         os.makedirs(os.path.dirname(full), exist_ok=True)
         with open(full, "w") as f:
             f.write(text)
+
+    def private_overlay(self, marker):
+        """(Re)write the served private overlay: a module-only flake placing ~/overlay-marker."""
+        work = os.path.join(os.path.dirname(self.work), "private-work")
+        bare = os.path.join(self.www, "repos", "private.git")
+        git = ["git", "-C", work, "-c", "user.name=e2e", "-c", "user.email=e2e@test"]
+        first = not os.path.isdir(work)
+        os.makedirs(work, exist_ok=True)
+        with open(os.path.join(work, "flake.nix"), "w") as f:
+            f.write(
+                "{ outputs = _: { homeModules.default = { centralModules, ... }: {\n"
+                "  imports = [ centralModules.zsh ];\n"
+                f'  home.file.overlay-marker.text = "{marker}";\n'
+                "}; }; }\n"
+            )
+        if first:
+            subprocess.run([*git, "init", "-q", "-b", "main"], check=True)
+        subprocess.run([*git, "add", "-A"], check=True)
+        subprocess.run([*git, "commit", "-q", "-m", marker], check=True)
+        if first:
+            shutil.rmtree(bare, ignore_errors=True)
+            subprocess.run(["git", "clone", "-q", "--bare", work, bare], check=True)
+            subprocess.run([*git, "remote", "add", "origin", bare], check=True)
+        else:
+            subprocess.run([*git, "push", "-q", "origin", "main"], check=True)
 
     def serve(self):
         www = self.www
@@ -427,6 +453,25 @@ def phase_installed(args, repo):
     vm = boot_installed(args)
     check("upgraded" in vm.succeed("cat ~/upgrade-marker"), "upgrade still active after reboot")
     check(vm.succeed("readlink -f /run/booted-system").split()[-1] == switched, "booted the upgraded generation")
+
+    log("private overlay: setup, upgrade with a new overlay commit, remove")
+    shutil.rmtree(os.path.join(os.path.dirname(repo.work), "private-work"), ignore_errors=True)
+    repo.private_overlay("v1")
+    rc, out = sudo(vm, f"nixos-central-private setup {PRIVATE_URL}", 3600)
+    check(rc == 0, "nixos-central-private setup succeeded")
+    flake = vm.succeed("cat /etc/nixos/flake.nix")
+    check(f'inputs.private.url = "{PRIVATE_URL}";' in flake and "inherit private;" in flake, "overlay declared in /etc/nixos/flake.nix")
+    check("v1" in vm.succeed("cat ~/overlay-marker"), "overlay's file active")
+    check("zsh-autosuggestions" in vm.succeed("cat ~/.zshrc"), "overlay picked a shared module via centralModules")
+    repo.private_overlay("v2")
+    rc, out = sudo(vm, "nixos-central-upgrade", 3600)
+    check(rc == 0, "nixos-central-upgrade with overlay succeeded")
+    check("v2" in vm.succeed("cat ~/overlay-marker"), "new overlay commit active after upgrade")
+    rc, out = sudo(vm, "nixos-central-private remove", 3600)
+    check(rc == 0, "nixos-central-private remove succeeded")
+    check("private" not in vm.succeed("cat /etc/nixos/flake.nix"), "overlay gone from /etc/nixos/flake.nix")
+    rc, _ = vm.run("test -e ~/overlay-marker")
+    check(rc != 0, "overlay's file removed")
     vm.poweroff()
 
 
