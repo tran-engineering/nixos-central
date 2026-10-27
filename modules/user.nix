@@ -1,7 +1,7 @@
 # The machine's primary user: account and home-manager profile.
 # The profile is users/<name> if the central repo has one, users/_default otherwise
 # (see nixos-central-internal/lib/profiles.nix).
-{ config, lib, pkgs, ... }:
+{ config, inputs, lib, pkgs, ... }:
 let
   inherit (config.nixos-central) user;
   profile = ((import ../nixos-central-internal/lib/profiles.nix).resolve user).path;
@@ -35,6 +35,7 @@ in
     sharedModules = [
       ./home/shell.nix
       ./home/private.nix
+      inputs.plasma-manager.homeModules.plasma-manager
     ];
     users.${user} = {
       imports = [ profile ];

@@ -208,6 +208,23 @@ not taken from `pkgs.unstable` stays on the system's NixOS release:
 home.packages = [ pkgs.unstable.helix ];
 ```
 
+`pkgs.unstable.logseq` is allowed although it is built on an end-of-life
+Electron: the shared package configuration permits exactly that Electron
+release (`nixos-central-internal/lib/nixpkgs.nix`), and nothing else marked
+insecure.
+
+KDE Plasma settings (theme, shortcuts, touchpads, any KDE config file) can be
+set declaratively with [plasma-manager](https://github.com/nix-community/plasma-manager),
+which every profile and overlay has:
+
+```nix
+programs.plasma = {
+  enable = true;
+  workspace.colorScheme = "BreezeDark";
+  shortcuts.kwin."Window Close" = "Meta+Shift+Q";
+};
+```
+
 This repository holds only what is useful to anyone. Your own setup (which
 modules you use, your name and email, fonts, themes, work files) belongs in
 your [private overlay](#private-overlay), not in a profile here.

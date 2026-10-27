@@ -111,6 +111,7 @@ in
         resolved.path
         ../../modules/home/shell.nix
         ../../modules/home/private.nix
+        inputs.plasma-manager.homeModules.plasma-manager
         ../../modules/home/standalone.nix
         {
           home.username = user;
