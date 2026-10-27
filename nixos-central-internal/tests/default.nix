@@ -139,8 +139,14 @@ in
         imports = [ (testHost { desktop = "none"; }) ];
         virtualisation.memorySize = 2048;
         environment.systemPackages = [ pkgs.git ];
-        # Stands in for a long-running automatic upgrade.
-        systemd.services.nixos-upgrade.script = lib.mkForce "sleep infinity";
+        # Stands in for a long-running automatic upgrade. Without network-online:
+        # the VM's second interface never comes up, so the start job would wait
+        # for NetworkManager-wait-online longer than the test does.
+        systemd.services.nixos-upgrade = {
+          script = lib.mkForce "sleep infinity";
+          wants = lib.mkForce [ ];
+          after = lib.mkForce [ ];
+        };
       };
     testScript = ''
       git = "git -c user.name=t -c user.email=t@t -C /tmp/central"
@@ -179,6 +185,12 @@ in
           assert "automatic upgrade is running" in out, out
           assert state() == before
           machine.succeed("systemctl stop nixos-upgrade.service")
+
+      with subtest("--private without an overlay changes nothing"):
+          before = state()
+          out = machine.fail("nixos-central-upgrade --private 2>&1")
+          assert "no private overlay" in out, out
+          assert state() == before
     '';
   };
 
@@ -212,7 +224,7 @@ in
       # Stub central: reads the overlay (forcing its fetch), then fails instead of building.
       machine.succeed(
           "mkdir -p /tmp/central /tmp/private /etc/nixos",
-          "echo '{ outputs = _: { lib.mkHost = a: throw \"stub central, overlay ''${a.private.rev}\"; }; }' > /tmp/central/flake.nix",
+          "echo '{ outputs = _: { lib.mkHost = a: throw \"stub central one, overlay ''${a.private.rev}\"; }; }' > /tmp/central/flake.nix",
           "echo '{ outputs = _: { homeModules.default = { }; }; }' > /tmp/private/flake.nix",
           f"{git} /tmp/central init -q && {git} /tmp/central add . && {git} /tmp/central commit -qm one",
           f"{git} /tmp/private init -q && {git} /tmp/private add . && {git} /tmp/private commit -qm one",
@@ -226,6 +238,17 @@ in
           before = state()
           out = machine.fail("nixos-central-upgrade 2>&1")
           assert "Updated input 'private'" in out and f"overlay {new_rev}" in out, out
+          assert state() == before, f"{before} != {state()}"
+
+      with subtest("--private updates only the overlay"):
+          machine.succeed(f"sed -i s/one/two/ /tmp/central/flake.nix && {git} /tmp/central commit -qam two")
+          machine.succeed(f"echo '# three' >> /tmp/private/flake.nix && {git} /tmp/private commit -qam three")
+          new_rev = machine.succeed(f"{git} /tmp/private rev-parse HEAD").strip()
+          before = state()
+          out = machine.fail("nixos-central-upgrade --private 2>&1")
+          assert "Updated input 'private'" in out and "Updated input 'central'" not in out, out
+          # central stays at the locked revision ("one"), the overlay is the new one.
+          assert f"stub central one, overlay {new_rev}" in out and "nothing was changed" in out, out
           assert state() == before, f"{before} != {state()}"
 
       with subtest("an unreachable overlay stops both upgrade paths"):
@@ -245,6 +268,117 @@ in
           assert "identitiesonly no" in out, out
     '';
   };
+
+  # nixos-central-upgrade of standalone homes changes nothing when it fails, an
+  # automatic upgrade runs or its arguments are wrong; --private updates only
+  # the overlay. Runs in a NixOS VM (offline: a stub central can't build a home),
+  # with the home commands under other names so they don't clash with NixOS's.
+  home-upgrade-failures =
+    let
+      homeCommand =
+        private:
+        lib.findFirst (p: (p.name or "") == "nixos-central-upgrade") (throw "no nixos-central-upgrade")
+          (central.mkHome {
+            user = "alice";
+            homeDirectory = "/home/alice";
+            stateVersion = central.release;
+            inherit system private;
+          }).config.home.packages;
+      commands = pkgs.runCommand "home-upgrade-commands" { } ''
+        mkdir -p $out/bin
+        ln -s ${homeCommand null}/bin/nixos-central-upgrade $out/bin/home-upgrade
+        ln -s ${
+          homeCommand {
+            inputs = { };
+            homeModules.default = { };
+          }
+        }/bin/nixos-central-upgrade $out/bin/home-upgrade-overlay
+      '';
+    in
+    runTest {
+      name = "nixos-central-home-upgrade-failures";
+      nodes.machine =
+        { pkgs, ... }:
+        {
+          imports = [ (testHost { desktop = "none"; }) ];
+          virtualisation.memorySize = 2048;
+          environment.systemPackages = [
+            pkgs.git
+            commands
+          ];
+          users.users.alice.linger = true;
+          # Stands in for a long-running automatic home upgrade.
+          systemd.user.services.home-manager-auto-upgrade = {
+            serviceConfig.Type = "oneshot";
+            script = "sleep infinity";
+          };
+        };
+      testScript = ''
+        def alice(cmd):
+            return f"su - alice -c 'export XDG_RUNTIME_DIR=/run/user/$(id -u alice); {cmd} 2>&1'"
+        git = "git -c user.name=t -c user.email=t@t -C"
+        def state(flake):
+            return machine.succeed(f"md5sum ~alice/{flake}/flake.lock; readlink ~alice/.local/state/nix/profiles/home-manager || true")
+        def commit(repo, old, new):
+            machine.succeed(alice(f"sed -i s/{old}/{new}/ ~/{repo}/flake.nix && {git} ~/{repo} commit -qam {new}"))
+
+        machine.wait_for_unit("multi-user.target")
+        machine.wait_for_unit("user@1000.service")
+
+        # Stub central: names its own revision and the overlay's, then fails instead of building.
+        # Two home flakes, without (home) and with (home-overlay) a private overlay.
+        machine.succeed(alice(" && ".join([
+            "mkdir -p ~/central ~/private ~/home ~/home-overlay",
+            "echo \"{ outputs = _: { lib.mkHome = a: throw \\\"stub central one, overlay \\''${a.private.rev or \\\"none\\\"}\\\"; }; }\" > ~/central/flake.nix",
+            "echo \"{ outputs = _: { homeModules.default = { }; }; } # one\" > ~/private/flake.nix",
+            f"{git} ~/central init -q && {git} ~/central add . && {git} ~/central commit -qm one",
+            f"{git} ~/private init -q && {git} ~/private add . && {git} ~/private commit -qm one",
+            "echo \"{ inputs.central.url = \\\"git+file:///home/alice/central\\\"; outputs = { central, ... }: { homeConfigurations.alice = central.lib.mkHome { }; }; }\" > ~/home/flake.nix",
+            "echo \"{ inputs.central.url = \\\"git+file:///home/alice/central\\\"; inputs.private.url = \\\"git+file:///home/alice/private\\\"; outputs = { central, private, ... }: { homeConfigurations.alice = central.lib.mkHome { inherit private; }; }; }\" > ~/home-overlay/flake.nix",
+            "nix flake lock ~/home && nix flake lock ~/home-overlay",
+            # The commands use ~/.config/home-manager.
+            "mkdir -p ~/.config && ln -s ~/home ~/.config/home-manager",
+        ])))
+
+        with subtest("build failure after a central update leaves lock and profile unchanged"):
+            commit("central", "one", "two")
+            before = state("home")
+            out = machine.fail(alice("home-upgrade"))
+            # nix wrote the bumped lock before failing; the command must have restored it.
+            assert "Updated input 'central'" in out, out
+            assert "stub central two" in out and "nothing was changed" in out, out
+            assert state("home") == before, f"{before} != {state('home')}"
+
+        with subtest("refuses while the automatic upgrade runs"):
+            machine.succeed(alice("systemctl --user start --no-block home-manager-auto-upgrade.service"))
+            machine.wait_until_succeeds(alice("systemctl --user show -P ActiveState home-manager-auto-upgrade.service | grep -qx activating"), timeout=30)
+            before = state("home")
+            out = machine.fail(alice("home-upgrade"))
+            assert "automatic upgrade is running" in out, out
+            assert state("home") == before
+            machine.succeed(alice("systemctl --user stop home-manager-auto-upgrade.service"))
+
+        with subtest("wrong arguments change nothing"):
+            before = state("home")
+            out = machine.fail(alice("home-upgrade --private"))
+            assert "no private overlay" in out, out
+            out = machine.fail(alice("home-upgrade --now"))
+            assert "usage: nixos-central-upgrade [--private]" in out, out
+            assert state("home") == before
+
+        with subtest("--private updates only the overlay"):
+            machine.succeed(alice("ln -sfn ~/home-overlay ~/.config/home-manager"))
+            commit("central", "two", "three")
+            commit("private", "one", "two")
+            new_rev = machine.succeed(alice(f"{git} ~/private rev-parse HEAD")).strip()
+            before = state("home-overlay")
+            out = machine.fail(alice("home-upgrade-overlay --private"))
+            assert "Updated input 'private'" in out and "Updated input 'central'" not in out, out
+            # central stays at the locked revision ("one"), the overlay is the new one.
+            assert f"stub central one, overlay {new_rev}" in out and "nothing was changed" in out, out
+            assert state("home-overlay") == before, f"{before} != {state('home-overlay')}"
+      '';
+    };
 
   # nixos-central-private setup changes nothing when the overlay can't be read or
   # the configuration with it can't be activated (offline VM: it can't build).
