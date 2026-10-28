@@ -15,8 +15,8 @@ fi
 set +o posix # /bin/sh on NixOS is bash in POSIX mode
 
 init_globals() {
-  # Override for testing, e.g. NIXOS_CENTRAL_FLAKE=github:tran-engineering/nixos-central/my-branch
-  CENTRAL="${NIXOS_CENTRAL_FLAKE:-github:tran-engineering/nixos-central}"
+  # Override for testing, e.g. NIXOS_CENTRAL_FLAKE=git+https://github.com/tran-engineering/nixos-central?ref=my-branch
+  CENTRAL="${NIXOS_CENTRAL_FLAKE:-git+https://github.com/tran-engineering/nixos-central}"
   LOG=/tmp/nixos-central-install.log
   WORK=/tmp/nixos-central/etc-nixos
   LUKS_KEY=/tmp/nixos-central-luks.key # must match nixos-central-internal/disko/default.nix

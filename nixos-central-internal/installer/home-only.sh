@@ -17,8 +17,8 @@ fi
 set +o posix # /bin/sh may be bash in POSIX mode
 
 init_globals() {
-  # Override for testing, e.g. NIXOS_CENTRAL_FLAKE=github:tran-engineering/nixos-central/my-branch
-  CENTRAL="${NIXOS_CENTRAL_FLAKE:-github:tran-engineering/nixos-central}"
+  # Override for testing, e.g. NIXOS_CENTRAL_FLAKE=git+https://github.com/tran-engineering/nixos-central?ref=my-branch
+  CENTRAL="${NIXOS_CENTRAL_FLAKE:-git+https://github.com/tran-engineering/nixos-central}"
   PAGES=https://tran-engineering.github.io/nixos-central
   HM_DIR="$HOME/.config/home-manager" # must match services.home-manager.autoUpgrade.flakeDir
   NIX_DAEMON_PROFILE=/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh

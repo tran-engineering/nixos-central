@@ -57,7 +57,7 @@ class Repo:
         )
         # try/update in the VM must reach this server instead of GitHub
         opts = os.path.join(self.work, "modules", "options.nix")
-        text = open(opts).read().replace('"github:tran-engineering/nixos-central"', f'"{CENTRAL_URL}"')
+        text = open(opts).read().replace('"git+https://github.com/tran-engineering/nixos-central"', f'"{CENTRAL_URL}"')
         open(opts, "w").write(text)
         self.git("init", "-q", "-b", "main")
         self.commit("initial")

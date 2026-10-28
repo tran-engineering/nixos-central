@@ -102,7 +102,7 @@
       };
 
       packages = forPackageSystems (system: {
-        # Used by the installer: nix run github:tran-engineering/nixos-central#disko
+        # Used by the installer: nix run git+https://github.com/tran-engineering/nixos-central#disko
         inherit (disko.packages.${system}) disko;
         # Used by home-only.sh for the first switch, so it matches the pinned release.
         inherit (inputs.home-manager.packages.${system}) home-manager;

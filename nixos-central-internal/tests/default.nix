@@ -617,7 +617,7 @@ in
         # /etc/nixos as the installer writes it.
         machine.succeed(
             "mkdir -p /etc/nixos /tmp/private",
-            "sed -e 's|@CENTRAL@|github:tran-engineering/nixos-central|' -e 's|@HOSTNAME@|machine|g' -e 's|@USER@|alice|' "
+            "sed -e 's|@CENTRAL@|git+https://github.com/tran-engineering/nixos-central|' -e 's|@HOSTNAME@|machine|g' -e 's|@USER@|alice|' "
             + "-e 's|@DESKTOP@|none|' -e 's|@DESKTOPS@|none|' -e 's|@DISK@|/dev/vda|' -e 's|@STATE_VERSION@|26.05|' "
             + "${../templates/host/flake.nix} > /etc/nixos/flake.nix",
             "echo '{}' > /etc/nixos/flake.lock",

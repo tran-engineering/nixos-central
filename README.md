@@ -127,7 +127,7 @@ comes from this repository (the `central` input):
 ```nix
 # /etc/nixos/flake.nix (written by the installer)
 {
-  inputs.central.url = "github:tran-engineering/nixos-central";
+  inputs.central.url = "git+https://github.com/tran-engineering/nixos-central";
   outputs = { central, ... }: {
     nixosConfigurations."foo" = central.lib.mkHost {
       hostname = "foo";
