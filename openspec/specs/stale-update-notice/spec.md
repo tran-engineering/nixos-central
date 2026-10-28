@@ -77,6 +77,17 @@ The threshold SHALL default to 7 days. A profile SHALL be able to change it, or 
 - **WHEN** a profile turns the notice off
 - **THEN** no notice is printed regardless of the ages
 
+### Requirement: Shown on demand
+The notice SHALL also be available as the command `nixos-central-update-notice`. Run by hand, it MUST print the notice with the ages and hint regardless of the threshold, also when the notice is turned off; a last successful update that cannot be determined is shown as unknown. Shells print it only when stale (`--if-stale`).
+
+#### Scenario: Recent update
+- **WHEN** the last successful update was yesterday and the user runs `nixos-central-update-notice`
+- **THEN** it prints that the last successful update was 1 day ago, with the other ages and the hint
+
+#### Scenario: Notice turned off
+- **WHEN** the profile turns the notice off and the user runs `nixos-central-update-notice`
+- **THEN** the notice is printed
+
 ### Requirement: Never disturbs the shell
 Determining the ages MUST NOT make the shell fail to start, print errors, or noticeably delay it. An age that cannot be determined SHALL be left out of the notice; if the last successful update cannot be determined, nothing is printed. Non-interactive shells MUST NOT print the notice.
 

@@ -687,7 +687,8 @@ in
         export NIXOS_CENTRAL_NOTICE_PROFILE=$PWD/p/home-manager NIXOS_CENTRAL_NOTICE_LOCK=$PWD/flake.lock \
           NIXOS_CENTRAL_NOTICE_STAMP=$PWD/stamp NIXOS_CENTRAL_NOTICE_NOW=$now
         # Never any error output, and exit status 0 (recorded in ./status).
-        notice() { ${lib.getExe notice} 2>stderr; echo $? > status; }
+        notice() { ${lib.getExe notice} --if-stale 2>stderr; echo $? > status; }
+        manual() { ${lib.getExe notice} 2>stderr; echo $? > status; }
         expect() {
           [ "$1" = "$2" ] || { printf 'expected: %s\n     got: %s\n' "$1" "$2"; exit 1; }
           [ ! -s stderr ] && [ "$(cat status)" = 0 ] || { cat stderr; echo "exit status $(cat status)"; exit 1; }
@@ -707,6 +708,12 @@ in
         touch -d @$((now - day)) stamp
         expect "" "$(notice)"
 
+        # run by hand: printed although recent, and although turned off
+        expect "nixos-central: last successful update 1 day ago (home configuration installed 15 days ago, central revision committed 16 days ago).
+        Check the daily update: systemctl --user status home-manager-auto-upgrade" "$(manual)"
+        expect "nixos-central: last successful update 1 day ago (home configuration installed 15 days ago, central revision committed 16 days ago)." \
+          "$(NIXOS_CENTRAL_NOTICE_DAYS=0 manual | head -1)"
+
         # recent generation (manual switch), although the recorded update is old
         touch -d @$((now - 9 * day)) stamp
         touch -h -d @$((now - 2 * day)) p/home-manager-2-link
@@ -717,8 +724,13 @@ in
         expect "nixos-central: last successful update 9 days ago (home configuration installed 15 days ago)." \
           "$(NIXOS_CENTRAL_NOTICE_LOCK=$PWD/missing notice | head -1)"
 
-        # nothing known: silent
+        # nothing known: silent, by hand "unknown"
         expect "" "$(HOME=$PWD USER=nobody NIXOS_CENTRAL_NOTICE_STAMP=$PWD/none NIXOS_CENTRAL_NOTICE_PROFILE=$PWD/none notice)"
+        expect "nixos-central: last successful update unknown (central revision committed 16 days ago)." \
+          "$(HOME=$PWD USER=nobody NIXOS_CENTRAL_NOTICE_STAMP=$PWD/none NIXOS_CENTRAL_NOTICE_PROFILE=$PWD/none manual | head -1)"
+
+        # unknown option
+        ${lib.getExe notice} --bogus 2>/dev/null && exit 1 || [ $? = 2 ]
 
         touch $out
       '';
@@ -783,6 +795,10 @@ in
               machine.succeed("test -e /var/lib/nixos-central/last-update")
               out = terminal()
               assert "nixos-central" not in out, out
+
+          with subtest("run by hand: printed although recent"):
+              out = machine.succeed("su - alice -c nixos-central-update-notice")
+              assert "last successful update today" in out, out
         '';
     };
 

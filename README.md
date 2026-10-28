@@ -104,6 +104,7 @@ Run by hand:
 nixos-central-upgrade             # update now (central, and your private overlay if any)
 nixos-central-upgrade --private   # update only the private overlay
 nixos-central-diff                # packages the last update changed
+nixos-central-update-notice       # when the last update succeeded, how old things are
 home-manager generations          # then run <generation path>/activate to roll back
 ```
 
@@ -431,7 +432,8 @@ your GitHub account.
   pinned revision of this repository are. A successful daily update counts even
   if nothing changed, so a quiet repository causes no notice. Homes on
   [other distributions](#install-on-another-linux-distribution) get the same
-  notice. Change the number of days in your profile, `0` turns it off:
+  notice. `nixos-central-update-notice` shows the same at any time. Change the
+  number of days in your profile, `0` turns the terminal notice off:
 
   ```nix
   nixos-central.updateNotice.days = 14;

@@ -1,6 +1,7 @@
 # Part of every profile (NixOS: modules/user.nix, standalone: lib.mkHome).
 # New interactive shells print a short notice when the last successful update is
-# older than nixos-central.updateNotice.days. Successful updates are recorded by
+# older than nixos-central.updateNotice.days (nixos-central-update-notice
+# --if-stale); run by hand, the command always prints it. Successful updates are recorded by
 # modules/base/auto-upgrade.nix and upgrade.nix (NixOS) and standalone.nix; a
 # newer generation counts too (manual rebuilds, fresh installs).
 {
@@ -20,6 +21,13 @@ let
     ];
     # NIXOS_CENTRAL_NOTICE_* are only set by tests.
     text = ''
+      if_stale=false
+      case "''${1-}" in
+        "") ;;
+        --if-stale) if_stale=true ;;
+        *) echo "usage: nixos-central-update-notice [--if-stale]" >&2; exit 2 ;;
+      esac
+
       days=''${NIXOS_CENTRAL_NOTICE_DAYS:-${toString cfg.days}}
       now=''${NIXOS_CENTRAL_NOTICE_NOW:-$(date +%s)}
       stamp=''${NIXOS_CENTRAL_NOTICE_STAMP:-${lib.escapeShellArg cfg.stamp}}
@@ -52,7 +60,7 @@ let
         ''
     )
     + ''
-      [ "$days" -gt 0 ] || exit 0
+      if $if_stale; then [ "$days" -gt 0 ] || exit 0; fi
 
       # Creation time of a generation link (not of the store path it points to).
       mtime() { stat -c %Y "$1" 2>/dev/null; }
@@ -76,8 +84,10 @@ let
         [ "$t" -le "$last" ] || last=$t
       fi
 
-      [ "$last" -gt 0 ] || exit 0
-      [ $(( now - last )) -gt $(( days * 86400 )) ] || exit 0
+      if $if_stale; then
+        [ "$last" -gt 0 ] || exit 0
+        [ $(( now - last )) -gt $(( days * 86400 )) ] || exit 0
+      fi
 
       details=()
       target=$(readlink -f "$running" || true)
@@ -95,12 +105,13 @@ let
 
       joined=""
       for d in "''${details[@]}"; do joined="''${joined:+$joined, }$d"; done
-      echo "nixos-central: last successful update $(ago "$last")''${joined:+ ($joined)}."
+      if [ "$last" -gt 0 ]; then when=$(ago "$last"); else when="unknown"; fi
+      echo "nixos-central: last successful update $when''${joined:+ ($joined)}."
       echo "$hint"
     '';
   };
 
-  call = "${lib.getExe notice} 2>/dev/null";
+  call = "${lib.getExe notice} --if-stale 2>/dev/null";
 in
 {
   options.nixos-central.updateNotice = {
@@ -136,10 +147,14 @@ in
     };
   };
 
-  # Only interactive shells read these.
-  config = lib.mkIf (cfg.days > 0) {
-    programs.bash.initExtra = lib.mkAfter "${call} || true";
-    programs.zsh.initContent = lib.mkAfter "${call} || true";
-    programs.fish.interactiveShellInit = lib.mkAfter call;
-  };
+  config = lib.mkMerge [
+    { home.packages = [ notice ]; }
+
+    # Only interactive shells read these.
+    (lib.mkIf (cfg.days > 0) {
+      programs.bash.initExtra = lib.mkAfter "${call} || true";
+      programs.zsh.initContent = lib.mkAfter "${call} || true";
+      programs.fish.interactiveShellInit = lib.mkAfter call;
+    })
+  ];
 }
