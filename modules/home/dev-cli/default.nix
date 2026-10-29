@@ -36,6 +36,7 @@
     opentofu
     terraform
     terramate
+    cmctl # needed in infra-terraform scripts
     tflint
     kubectl
     kubectx
