@@ -25,9 +25,9 @@ init_globals() {
     systemd-resolve systemd-timesync systemd-oom systemd-coredump rtkit avahi geoclue pipewire
     nm-openvpn nm-iodine fwupd-refresh cups lp colord wheel users admin nixos "
 
-  HOST="" USERNAME="" DESKTOP="" DISK=""
-  HOST_FLAG=0 USER_FLAG=0 DESKTOP_FLAG=0 DISK_FLAG=0
-  DESKTOPS="" RELEASE="" DISK_ID="" PASSWORD_HASH=""
+  HOST="" USERNAME="" DESKTOP="" DISK="" KEYBOARD_LAYOUT=""
+  HOST_FLAG=0 USER_FLAG=0 DESKTOP_FLAG=0 DISK_FLAG=0 KEYBOARD_LAYOUT_FLAG=0
+  DESKTOPS="" RELEASE="" DISK_ID="" PASSWORD_HASH="" KEYBOARD_LAYOUTS=""
   STEP="starting"
 }
 
@@ -51,6 +51,8 @@ Options:
   --user NAME       login name of the primary user
   --desktop NAME    desktop environment (default: kde)
   --disk DEVICE     disk to erase and install on (default: first internal disk >= 40 GiB)
+  --keyboard-layout NAME
+                    keyboard layout (default: us): us, de, sg (Swiss German), sf (Swiss French)
   -h, --help        show this help
 EOF
 }
@@ -75,7 +77,7 @@ parse_flags() {
         value=${flag#*=}
         flag=${flag%%=*}
         ;;
-      --hostname | --user | --desktop | --disk)
+      --hostname | --user | --desktop | --disk | --keyboard-layout)
         [ $# -ge 2 ] || {
           usage
           die "$flag needs a value."
@@ -89,6 +91,7 @@ parse_flags() {
       --user) USERNAME=$value USER_FLAG=1 ;;
       --desktop) DESKTOP=$value DESKTOP_FLAG=1 ;;
       --disk) DISK=$value DISK_FLAG=1 ;;
+      --keyboard-layout) KEYBOARD_LAYOUT=$value KEYBOARD_LAYOUT_FLAG=1 ;;
       *)
         usage
         die "Unknown option: $1"
@@ -149,6 +152,7 @@ ask_secret() {
 valid_hostname() { [[ $1 =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; }
 valid_username() { [[ $1 =~ ^[a-z][a-z0-9_-]{0,31}$ ]] && [[ $RESERVED_USERS != *" $1 "* ]]; }
 valid_desktop() { [[ " $DESKTOPS " == *" $1 "* ]]; }
+valid_keyboard_layout() { [[ " $KEYBOARD_LAYOUTS " == *" $1 "* ]]; }
 
 random_hostname() {
   local chars=abcdefghijklmnopqrstuvwxyz0123456789 suffix=""
@@ -156,9 +160,22 @@ random_hostname() {
   printf 'nixos-%s' "$suffix"
 }
 
-# Ask for (or validate the flag value of) hostname, user and desktop.
+# Ask for (or validate the flag value of) keyboard layout, hostname, user and
+# desktop. The keyboard layout comes first and is switched to right away, so
+# every following answer (including the disk passphrase) is typed with it.
 collect_machine_facts() {
   heading "Machine"
+
+  if [ "$KEYBOARD_LAYOUT_FLAG" = 1 ]; then
+    valid_keyboard_layout "$KEYBOARD_LAYOUT" ||
+      die "Unknown keyboard layout '$KEYBOARD_LAYOUT'. Available: $KEYBOARD_LAYOUTS"
+  else
+    info "Available keyboard layouts: $KEYBOARD_LAYOUTS"
+    while ask KEYBOARD_LAYOUT "Keyboard layout" "us" && ! valid_keyboard_layout "$KEYBOARD_LAYOUT"; do
+      info "Choose one of: $KEYBOARD_LAYOUTS"
+    done
+  fi
+  apply_keyboard_layout
 
   if [ "$HOST_FLAG" = 0 ]; then
     local default
@@ -182,6 +199,15 @@ collect_machine_facts() {
       info "Choose one of: $DESKTOPS"
     done
   fi
+}
+
+# Switch this live console to the chosen layout: the console keymap from the
+# central repository (loadkeys needs a real console, so this is a no-op e.g. in
+# a terminal of the graphical live session).
+apply_keyboard_layout() {
+  local keymap
+  keymap=$(nixx eval --raw "$CENTRAL#lib" --apply "l: l.keyboardLayouts.\"$KEYBOARD_LAYOUT\".consoleKeyMap") || return 0
+  loadkeys "$keymap" >/dev/null 2>&1 || true
 }
 
 # ── checks ────────────────────────────────────────────────────────────────────
@@ -221,10 +247,9 @@ preflight() {
 
   info "Fetching nixos-central ($CENTRAL) ..."
   local facts
-  facts=$(nixx eval --raw "$CENTRAL#lib" --apply 'l: l.release + " " + toString l.desktopNames') ||
+  facts=$(nixx eval --raw "$CENTRAL#lib" --apply 'l: l.release + ":" + toString l.desktopNames + ":" + toString l.keyboardLayoutNames') ||
     die "Could not load $CENTRAL."
-  RELEASE=${facts%% *}
-  DESKTOPS=${facts#* }
+  IFS=: read -r RELEASE DESKTOPS KEYBOARD_LAYOUTS <<<"$facts"
 }
 
 # ── disk ──────────────────────────────────────────────────────────────────────
@@ -355,6 +380,8 @@ write_machine_flake() {
     -e "s|@DESKTOP@|$DESKTOP|g" \
     -e "s|@DESKTOPS@|$DESKTOPS|g" \
     -e "s|@DISK@|$(sed_escape "$DISK_ID")|g" \
+    -e "s|@KEYBOARD_LAYOUT@|$KEYBOARD_LAYOUT|g" \
+    -e "s|@KEYBOARD_LAYOUTS@|$KEYBOARD_LAYOUTS|g" \
     -e "s|@STATE_VERSION@|$RELEASE|g" \
     "$template/flake.nix" >"$WORK/flake.nix"
   nixx flake lock "path:$WORK"
@@ -400,6 +427,7 @@ finish() {
   info "    hostname  $HOST"
   info "    user      $USERNAME"
   info "    desktop   $DESKTOP"
+  info "    keyboard  $KEYBOARD_LAYOUT"
   info "    disk      $DISK_ID"
   info ""
   info "Remove the USB stick when the computer restarts."

@@ -26,6 +26,12 @@ in
       description = "Disk the system was installed on.";
     };
 
+    keyboardLayout = lib.mkOption {
+      type = lib.types.enum (builtins.attrNames (import ../nixos-central-internal/lib/keyboard-layouts.nix));
+      default = "us";
+      description = "Default keyboard layout of the machine, for the console and the graphical session. One of the names in nixos-central-internal/lib/keyboard-layouts.nix (us, de, sg = Swiss German, sf = Swiss French).";
+    };
+
     private.enable = lib.mkEnableOption "the private overlay of the machine flake (set by mkHost)";
 
     repo = lib.mkOption {

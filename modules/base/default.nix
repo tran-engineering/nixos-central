@@ -12,6 +12,7 @@
     ./private.nix
     ./unstable.nix
     ./graphical.nix
+    ./keyboard.nix
   ];
 
   boot.loader.systemd-boot = {

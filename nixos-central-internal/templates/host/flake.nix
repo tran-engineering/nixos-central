@@ -13,6 +13,7 @@
         user = "@USER@";
         desktop = "@DESKTOP@"; # one of: @DESKTOPS@
         disk = "@DISK@";
+        keyboardLayout = "@KEYBOARD_LAYOUT@"; # one of: @KEYBOARD_LAYOUTS@
         stateVersion = "@STATE_VERSION@"; # release this machine was installed with; do not change
         modules = [ ./hardware-configuration.nix ];
       };

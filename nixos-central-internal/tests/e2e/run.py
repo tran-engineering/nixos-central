@@ -41,6 +41,12 @@ def desktop_names(repo):
     return sorted(f[:-4] for f in os.listdir(os.path.join(repo, "modules", "desktops")) if f.endswith(".nix"))
 
 
+def keyboard_layouts(repo):
+    """Keyboard layouts the installer offers, sorted like lib.keyboardLayoutNames."""
+    path = os.path.join(repo, "nixos-central-internal", "lib", "keyboard-layouts.nix")
+    return sorted(re.findall(r"^  ([a-z]+) = \{", open(path).read(), re.M))
+
+
 class Repo:
     """Bare copy of the working tree, served over smart HTTP via git http-backend."""
 
@@ -248,6 +254,7 @@ def phase_variants(args):
     make_disks(args, internal="32G")
     vm = live_vm(args)
     vm.send(f"{RUN_INSTALLER} {flags}")
+    vm.answer(r"Keyboard layout \[us\]: ", "us", 900)
     vm.expect(r"Disks found:", 900)
     vm.expect(r"/dev/vda\s+32G")
     vm.expect(r"No internal disk of at least 40 GiB found")
@@ -267,6 +274,7 @@ def phase_variants(args):
     make_disks(args)
     vm = live_vm(args)
     vm.send(f"{RUN_INSTALLER} {flags}")
+    vm.answer(r"Keyboard layout \[us\]: ", "us", 900)
     vm.answer(r"Type 'yes' to erase it and install: ", "yes", 900)
     vm.answer(r"Disk passphrase: ", LUKS)
     vm.answer(r"Repeat to confirm: ", LUKS)
@@ -288,7 +296,10 @@ def phase_install(args):
 
     log("installer: prompts, validation, auto-selected disk, declined wipe")
     vm.send(run_installer)
-    vm.answer(r"Hostname \[nixos-[a-z0-9]{4}\]: ", "Bad_Host", 900)
+    vm.answer(r"Keyboard layout \[us\]: ", "qwertz", 900)
+    layouts = re.escape(" ".join(keyboard_layouts(args.repo)))
+    vm.answer(rf"Choose one of: {layouts}.*\r\n.*Keyboard layout \[us\]: ", "us")
+    vm.answer(r"Hostname \[nixos-[a-z0-9]{4}\]: ", "Bad_Host")
     vm.answer(r"lowercase letters.*\r\n.*Hostname \[nixos-[a-z0-9]{4}\]: ", "e2e-host")
     vm.answer(r"Your username: ", "Alice Smith")
     vm.answer(r"reserved.*\r\n.*Your username: ", "root")
@@ -305,7 +316,7 @@ def phase_install(args):
     check("EMPTY" in out, "declined wipe left /dev/vda untouched")
 
     log("installer: flags, typed confirmation, secrets, install")
-    vm.send(f"{run_installer} -s -- --hostname e2e-host --user alice --desktop none")
+    vm.send(f"{run_installer} -s -- --hostname e2e-host --user alice --desktop none --keyboard-layout sg")
     vm.answer(r"Type 'yes' to erase it and install: ", "yes", 900)
     vm.answer(r"Disk passphrase: ", LUKS)
     vm.answer(r"Repeat to confirm: ", "mismatch")
@@ -319,6 +330,10 @@ def phase_install(args):
 
     out = vm.succeed("sudo ls /mnt/etc/nixos")
     check(all(f in out for f in ["flake.nix", "flake.lock", "hardware-configuration.nix"]), "/mnt/etc/nixos has flake, lock, hardware config")
+    out = vm.succeed("sudo cat /mnt/etc/nixos/flake.nix")
+    check('keyboardLayout = "sg";' in out, "keyboard layout fact sg written to the machine flake")
+    rc, _ = vm.run("sudo grep -q '^KEYMAP=sg-latin1$' /mnt/etc/vconsole.conf")
+    check(rc == 0, "Swiss German console keymap in /mnt/etc/vconsole.conf")
     out = vm.succeed("sudo stat -c '%a %U' /mnt/etc/secrets/alice.hash")
     check("400 root" in out, "password hash stored 0400 root outside the store")
     rc, _ = vm.run("test -e /tmp/nixos-central-luks.key")
@@ -371,6 +386,7 @@ def phase_installed(args, repo):
     check("e2e-host" in vm.succeed("hostname"), "hostname is e2e-host")
     rc, _ = sudo(vm, "true")
     check(rc == 0, "primary user can sudo with the chosen password")
+    check("KEYMAP=sg-latin1" in vm.succeed("cat /etc/vconsole.conf"), "chosen keyboard layout active on the console")
     out = vm.succeed("ls /etc/nixos")
     check(out.split()[-3:] == ["flake.lock", "flake.nix", "hardware-configuration.nix"], "/etc/nixos holds only flake, lock, hardware config")
     rc, _ = vm.run("systemctl is-active display-manager")

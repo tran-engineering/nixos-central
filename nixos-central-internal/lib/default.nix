@@ -3,6 +3,7 @@ let
   inherit (inputs) nixpkgs home-manager disko;
   inherit (nixpkgs) lib;
   overlay = import ./overlay.nix { inherit lib; };
+  keyboardLayouts = import ./keyboard-layouts.nix;
 
   # All NixOS modules of a machine, without evaluating them (also used by tests).
   hostModules =
@@ -12,6 +13,7 @@ let
       desktop,
       disk,
       stateVersion,
+      keyboardLayout ? "us", # one of the names in keyboard-layouts.nix
       modules ? [ ],
       system ? "x86_64-linux",
       private ? null, # private overlay flake (README, "Private overlay")
@@ -36,6 +38,7 @@ let
             user
             desktop
             disk
+            keyboardLayout
             ;
         };
         home-manager.extraSpecialArgs = { inherit (overlay) centralModules; };
@@ -59,6 +62,11 @@ in
   inherit hostModules;
 
   desktopNames = import ./desktop-names.nix;
+
+  # Keyboard layouts the installer offers, and how each maps to the console and
+  # the graphical session (see keyboard-layouts.nix).
+  inherit keyboardLayouts;
+  keyboardLayoutNames = builtins.attrNames keyboardLayouts;
 
   # Shared home modules by name, as profiles and overlays get them.
   inherit (overlay) centralModules;

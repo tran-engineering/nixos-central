@@ -1142,6 +1142,45 @@ in
         '';
       };
 
+    # The keyboardLayout fact reaches the console and the graphical session;
+    # machines without the fact (installed before it existed) keep "us".
+    keyboard-layouts =
+      let
+        configOf =
+          layout:
+          (central.mkHost {
+            hostname = "machine";
+            user = "alice";
+            desktop = "none";
+            disk = "/dev/vda";
+            stateVersion = central.release;
+            keyboardLayout = layout;
+          }).config;
+        expect =
+          layout: keymap: xkbLayout: xkbVariant:
+          let
+            c = configOf layout;
+            ok =
+              c.console.keyMap == keymap
+              && c.services.xserver.xkb.layout == xkbLayout
+              && c.services.xserver.xkb.variant == xkbVariant;
+          in
+          lib.assertMsg ok
+            "keyboard layout ${layout} maps to ${c.console.keyMap}, xkb ${c.services.xserver.xkb.layout}/${c.services.xserver.xkb.variant}";
+      in
+      assert expect "us" "us" "us" "";
+      assert expect "de" "de-latin1" "de" "";
+      assert expect "sg" "sg-latin1" "ch" "";
+      assert expect "sf" "fr_CH-latin1" "ch" "fr";
+      assert (central.mkHost {
+        hostname = "machine";
+        user = "alice";
+        desktop = "none";
+        disk = "/dev/vda";
+        stateVersion = central.release;
+      }).config.console.keyMap == "us";
+      pkgs.writeText "keyboard-layouts" "ok";
+
     reboot-notify = rebootNotify { desktop = "none"; };
   };
 

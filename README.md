@@ -45,6 +45,7 @@ sh install.sh
 | `--user NAME` | asked | lowercase, starts with a letter, max. 32 chars; system names (`root`, …) are reserved |
 | `--desktop NAME` | asked, suggests `kde` | one of the [desktops](#desktops) |
 | `--disk DEVICE` | first internal disk ≥ 40 GiB | still needs the typed confirmation |
+| `--keyboard-layout NAME` | asked, suggests `us` | `us`, `de`, `sg` (Swiss German), `sf` (Swiss French) |
 
 Values passed as options are not asked for; invalid option values stop the
 installer before anything is changed.
@@ -52,7 +53,9 @@ installer before anything is changed.
 ### What the installer does
 
 1. Checks it runs on the NixOS live image, booted in UEFI mode, with access to GitHub.
-2. Asks for hostname, username and desktop (unless given as options).
+2. Asks for the keyboard layout first and switches this console to it, so the
+   following answers — including the disk passphrase — are typed with it. Then
+   asks for hostname, username and desktop (unless given as options).
 3. Picks the disk: the first whole disk of at least 40 GiB that is not removable,
    not connected via USB, and not the USB stick it booted from. It shows device,
    size and model and continues only if you type `yes`.
@@ -134,6 +137,7 @@ comes from this repository (the `central` input):
       user = "alice";
       desktop = "kde";
       disk = "/dev/disk/by-id/nvme-...";
+      keyboardLayout = "sg";
       stateVersion = "26.05";  # release the machine was installed with; never change
       modules = [ ./hardware-configuration.nix ];
     };
@@ -149,10 +153,12 @@ comes from this repository (the `central` input):
 | `user` | primary user (admin via `sudo`) |
 | `desktop` | one of the [desktops](#desktops) |
 | `disk` | disk the system was installed on |
+| `keyboardLayout` | keyboard layout: `us`, `de`, `sg` (Swiss German) or `sf` (Swiss French); console and graphical session |
 | `stateVersion` | NixOS release at install time |
 | `modules` | extra NixOS modules; the installer adds `hardware-configuration.nix` |
 
-To change the desktop later, edit `desktop` in `/etc/nixos/flake.nix` and run
+To change the desktop or keyboard layout later, edit `desktop` or
+`keyboardLayout` in `/etc/nixos/flake.nix` and run
 `sudo nixos-rebuild switch --flake /etc/nixos`.
 
 ### Desktops
