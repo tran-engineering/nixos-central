@@ -49,7 +49,12 @@ in
     # The niri module enables gnome-keyring; unlock it with the login password.
     security.pam.services.sddm.enableGnomeKeyring = true;
 
-    systemd.user.services.noctalia-shell = sessionService "Noctalia shell" (lib.getExe noctalia);
+    systemd.user.services.noctalia-shell = lib.recursiveUpdate (sessionService "Noctalia shell" (lib.getExe noctalia)) {
+      # Noctalia 4.7.6 creates these asynchronously on first start and then
+      # never finishes loading its settings: no bar or notifications until it
+      # is restarted. Existing directories avoid that.
+      serviceConfig.ExecStartPre = "${pkgs.coreutils}/bin/mkdir -p %h/.config/noctalia %h/.cache/noctalia";
+    };
     systemd.user.services.polkit-gnome-agent =
       sessionService "Polkit authentication agent" "${pkgs.polkit_gnome}/libexec/polkit-gnome-authentication-agent-1";
 

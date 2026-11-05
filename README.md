@@ -455,7 +455,7 @@ open a pull request when happy.
 ```sh
 nix flake check                       # evaluates and builds sample hosts, runs VM tests
 nix build .#checks.x86_64-linux.shells
-nix build .#desktopTests.reboot-notify-kde   # full KDE/GNOME desktop tests, not in flake check (10–15 min each)
+nix build .#desktopTests.reboot-notify-kde   # full desktop tests (kde, gnome, niri-noctalia), not in flake check (10–15 min each)
 nix run --impure -f nixos-central-internal/tests/e2e   # full installer test in QEMU (needs KVM + internet)
 shellcheck nixos-central-internal/installer/install.sh
 shellcheck nixos-central-internal/installer/home-only.sh
@@ -472,5 +472,7 @@ rely on; `overlay-eval` and `overlay-rejects-inputs` test private overlays with
 `nixos-central-internal/tests/overlay`. These checks don't build packages;
 those come from the NixOS binary cache.
 The update notification is tested headless with a stub notification server
-(`reboot-notify`); `desktopTests.reboot-notify-kde` and `-gnome` check it in a
-real desktop session and are run by hand, as CI runs only `nix flake check`.
+(`reboot-notify`); `desktopTests.reboot-notify-kde`, `-gnome` and
+`-niri-noctalia` check it in a real desktop session and are run by hand, as CI
+runs only `nix flake check`. The niri test also checks that Noctalia loads on
+the first login into a fresh home.

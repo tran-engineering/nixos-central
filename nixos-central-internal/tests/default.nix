@@ -94,11 +94,13 @@ let
   # With desktop "none", a stub notification server stands in for the desktop
   # (checks the logic, fast); with a real desktop, its own server and session
   # are used (checks the integration, slow). `node` and `extraScript` add
-  # desktop-specific configuration and checks.
+  # desktop-specific configuration and checks; `sessionScript` runs as soon as
+  # the graphical session is up, before the notification server is awaited.
   rebootNotify =
     {
       desktop,
       node ? { },
+      sessionScript ? "",
       extraScript ? "",
     }:
     let
@@ -164,6 +166,7 @@ let
             ''
               machine.wait_until_succeeds(f"{user} is-active graphical-session.target", timeout=900)
               machine.wait_until_succeeds(f"{user} is-active {unit}.timer")
+              ${sessionScript}
             ''
         )
         + ''
@@ -921,5 +924,39 @@ in
   desktop = {
     reboot-notify-kde = rebootNotify { desktop = "kde"; };
     reboot-notify-gnome = rebootNotify { desktop = "gnome"; };
+    reboot-notify-niri-noctalia = rebootNotify {
+      desktop = "niri-noctalia";
+      node = {
+        # QEMU's virtio-gpu has no 3D acceleration here; without the software
+        # KMS driver niri finds no usable renderer and has no outputs, so
+        # Noctalia would have no screen to show its bar on.
+        systemd.user.services.niri.environment.MESA_LOADER_DRIVER_OVERRIDE = "kms_swrast";
+        virtualisation.qemu.options = [ "-vga none -device virtio-gpu-pci" ];
+      };
+      sessionScript = ''
+        noctalia_log = "journalctl _SYSTEMD_USER_UNIT=noctalia-shell.service --no-pager -o cat"
+
+        with subtest("niri uses the central config and has an output"):
+            machine.succeed("test ! -e /home/alice/.config/niri/config.kdl")
+            machine.wait_until_succeeds(
+                "su - alice -c 'NIRI_SOCKET=$(ls /run/user/1000/niri.*.sock) niri msg outputs' | grep -q Virtual-1",
+                timeout=60,
+            )
+
+        with subtest("Noctalia loads its settings on the first start (fresh home)"):
+            machine.wait_until_succeeds(f"{user} is-active noctalia-shell.service", timeout=60)
+            machine.wait_until_succeeds(f"{noctalia_log} | grep -q 'Settings loaded'", timeout=120)
+            machine.wait_until_succeeds(f"{noctalia_log} | grep -q 'IPCService.*Service started'", timeout=60)
+            machine.succeed("test -s /home/alice/.config/noctalia/settings.json")
+      '';
+      extraScript = ''
+        with subtest("the launcher keybinding's IPC call works"):
+            # As a niri keybinding runs it: quickshell only targets instances on
+            # the caller's Wayland display.
+            machine.succeed("su - alice -c 'XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 noctalia-shell ipc call launcher toggle'")
+            assert "Shell ID" not in machine.succeed(f"{noctalia_log} --since '-30s'"), "Noctalia restarted"
+            machine.succeed(f"{user} is-active noctalia-shell.service")
+      '';
+    };
   };
 }
