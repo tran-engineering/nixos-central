@@ -35,6 +35,7 @@ in
     sharedModules = [
       ./home/shell.nix
       ./home/private.nix
+      ./home/command.nix
       ./home/update-notice.nix
       ./home/gc.nix
       inputs.plasma-manager.homeModules.plasma-manager

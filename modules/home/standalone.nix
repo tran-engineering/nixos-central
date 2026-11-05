@@ -2,7 +2,7 @@
 # other than NixOS. Facts (user, home directory, NVIDIA driver) are set by mkHome.
 { config, lib, pkgs, ... }:
 let
-  # Inputs the daily upgrade and nixos-central-upgrade update (and nothing else).
+  # Inputs the daily upgrade and nixos-central upgrade update (and nothing else).
   updateInputs = [ "central" ] ++ lib.optional config.nixos-central.private.enable "private";
 in
 {
@@ -24,20 +24,27 @@ in
   # home-manager CLI for manual switches and rollbacks.
   programs.home-manager.enable = true;
 
-  home.packages = [
-    # Adds or removes the private overlay (README, "Private overlay").
-    (pkgs.callPackage ../../nixos-central-internal/private { })
+  # Subcommands of the home's nixos-central command (modules/home/command.nix).
+  nixos-central.commands = {
     # The daily upgrade below, right now.
-    (pkgs.callPackage ../../nixos-central-internal/home-upgrade {
-      inherit updateInputs;
-      inherit (config.services.home-manager.autoUpgrade) flakeDir;
-      switchFlags = config.services.home-manager.autoUpgrade.flags;
-      nix = config.nix.package;
-      home-manager = config.programs.home-manager.package;
-    })
+    upgrade = (import ../../nixos-central-internal/command/subcommands.nix).upgrade // {
+      package = pkgs.callPackage ../../nixos-central-internal/home-upgrade {
+        inherit updateInputs;
+        inherit (config.services.home-manager.autoUpgrade) flakeDir;
+        switchFlags = config.services.home-manager.autoUpgrade.flags;
+        nix = config.nix.package;
+        home-manager = config.programs.home-manager.package;
+      };
+    };
     # What the last update changed.
-    (pkgs.callPackage ../../nixos-central-internal/diff { mode = "home"; })
-  ];
+    diff = (import ../../nixos-central-internal/command/subcommands.nix).diff // {
+      package = pkgs.callPackage ../../nixos-central-internal/diff { mode = "home"; };
+    };
+    # Shows, adds or removes the private overlay (README, "Private overlay").
+    private = (import ../../nixos-central-internal/command/subcommands.nix).private // {
+      package = pkgs.callPackage ../../nixos-central-internal/private { };
+    };
+  };
 
   # Daily: bump the `central` input (and the private overlay, if any) in
   # ~/.config/home-manager and switch to it.

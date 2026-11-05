@@ -1,4 +1,4 @@
-# nixos-central-upgrade: install the latest central configuration right away.
+# nixos-central upgrade: install the latest central configuration right away.
 # Same update as the daily auto-upgrade, but activated now (switch) instead of
 # only staged for the next boot. Never reboots.
 {
@@ -25,13 +25,13 @@ let
               "update_flags=(--update-input private)"
             else
               ''
-                echo "This machine has no private overlay (add one with: nixos-central-private setup)." >&2
+                echo "This machine has no private overlay (add one with: nixos-central private setup)." >&2
                 exit 1
               ''
           }
           ;;
         *)
-          echo "usage: nixos-central-upgrade [--private]" >&2
+          echo "usage: nixos-central upgrade [--private]" >&2
           echo "Installs the latest ${config.nixos-central.repo} and uses it right away." >&2
           echo "  --private  update only the private overlay; central stays as it is" >&2
           exit 2
@@ -84,5 +84,7 @@ let
   };
 in
 {
-  environment.systemPackages = [ upgrade ];
+  nixos-central.commands.upgrade = (import ../../nixos-central-internal/command/subcommands.nix).upgrade // {
+    package = upgrade;
+  };
 }

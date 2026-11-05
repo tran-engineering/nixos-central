@@ -111,6 +111,7 @@ in
         resolved.path
         ../../modules/home/shell.nix
         ../../modules/home/private.nix
+        ../../modules/home/command.nix
         ../../modules/home/update-notice.nix
         ../../modules/home/gc.nix
         inputs.plasma-manager.homeModules.plasma-manager

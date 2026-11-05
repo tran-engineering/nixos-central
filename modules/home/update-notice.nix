@@ -1,7 +1,7 @@
 # Part of every profile (NixOS: modules/user.nix, standalone: lib.mkHome).
 # New interactive shells print a short notice when the last successful update is
-# older than nixos-central.updateNotice.days (nixos-central-update-notice
-# --if-stale); run by hand, the command always prints it. Successful updates are recorded by
+# older than nixos-central.updateNotice.days (the notice script with
+# --if-stale); run by hand (`nixos-central status`), it always prints it. Successful updates are recorded by
 # modules/base/auto-upgrade.nix and upgrade.nix (NixOS) and standalone.nix; a
 # newer generation counts too (manual rebuilds, fresh installs).
 {
@@ -25,7 +25,7 @@ let
       case "''${1-}" in
         "") ;;
         --if-stale) if_stale=true ;;
-        *) echo "usage: nixos-central-update-notice [--if-stale]" >&2; exit 2 ;;
+        *) echo "usage: nixos-central status" >&2; exit 2 ;;
       esac
 
       days=''${NIXOS_CENTRAL_NOTICE_DAYS:-${toString cfg.days}}
@@ -49,7 +49,7 @@ let
           running=''${NIXOS_CENTRAL_NOTICE_RUNNING:-/run/current-system}
           booted=''${NIXOS_CENTRAL_NOTICE_BOOTED:-/run/booted-system}
           what="running system"
-          hint="Run nixos-central-upgrade to update now (log of the daily update: journalctl -u nixos-upgrade)."
+          hint="Run nixos-central upgrade to update now (log of the daily update: journalctl -u nixos-upgrade)."
           # Staged for the next boot, as in modules/base/reboot-notify.nix.
           if [ -e "$profile" ]; then
             staged=$(readlink -f "$profile")
@@ -148,7 +148,11 @@ in
   };
 
   config = lib.mkMerge [
-    { home.packages = [ notice ]; }
+    {
+      nixos-central.commands.status = (import ../../nixos-central-internal/command/subcommands.nix).status // {
+        package = notice;
+      };
+    }
 
     # Only interactive shells read these.
     (lib.mkIf (cfg.days > 0) {

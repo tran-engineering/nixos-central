@@ -194,12 +194,12 @@ let
               shown = machine.succeed("journalctl _SYSTEMD_USER_UNIT=notification-stub.service | grep 'notification:'")
               assert shown.count("notification:") == 1, shown
               assert "Update ready – reboot when convenient | " in shown, shown
-              assert "Run nixos-central-diff to see what it changes." in shown, shown
+              assert "Run nixos-central diff to see what it changes." in shown, shown
             ''
           else
             ''
               # The body points to the diff command (the shown text depends on the desktop's server).
-              machine.succeed("grep -q 'Run nixos-central-diff' ${nodes.machine.systemd.user.services.nixos-central-reboot-notify.serviceConfig.ExecStart}")
+              machine.succeed("grep -q 'Run nixos-central diff' ${nodes.machine.systemd.user.services.nixos-central-reboot-notify.serviceConfig.ExecStart}")
             ''
         )
         + ''
@@ -237,7 +237,204 @@ in
       '';
     };
 
-    # nixos-central-diff compares the staged generation, or else the last two.
+    # The nixos-central command with stub subcommands: help, dispatch, errors,
+    # menu entries, and the generated completions (syntax; bash and fish run).
+    # The menu itself (gum) needs a terminal and is checked by hand.
+    command =
+      let
+        stub = name: pkgs.writeShellScriptBin "stub-${name}" ''echo "${name}: $*"'';
+        nixos-central = pkgs.callPackage ../command {
+          commands = {
+            one = {
+              package = stub "one";
+              description = "First stub";
+              usage = "[--flag]";
+              order = 10;
+              chooser = true;
+              completions."" = [ "--flag" ];
+            };
+            two = {
+              package = stub "two";
+              description = "Second stub";
+              usage = "[add <x> [--name N] | drop]";
+              order = 20;
+              chooser = true;
+              completions = {
+                "" = [
+                  "add"
+                  "drop"
+                ];
+                add = [ "--name" ];
+              };
+            };
+            hidden = {
+              package = stub "hidden";
+              description = "Not in the menu";
+              usage = "<arg>";
+              order = 30;
+              chooser = false;
+              completions = { };
+            };
+          };
+        };
+      in
+      assert lib.assertMsg (
+        map (lib.head) (map (lib.splitString " ") nixos-central.menuItems) == [
+          "one"
+          "two"
+        ]
+      ) "menu: ${toString nixos-central.menuItems}";
+      pkgs.runCommand "command"
+        {
+          nativeBuildInputs = [
+            nixos-central
+            pkgs.zsh
+            pkgs.fish
+          ];
+        }
+        ''
+          set -euo pipefail
+          export HOME=$TMPDIR
+          expect() { [ "$1" = "$2" ] || { printf 'expected: %s\n     got: %s\n' "$1" "$2"; exit 1; }; }
+
+          # help: every subcommand with usage and description, exit 0
+          for h in help -h --help; do
+            msg=$(nixos-central $h)
+            for line in "one [--flag]" "First stub" "two [add <x> [--name N] | drop]" "hidden <arg>" "Not in the menu"; do
+              grep -qF -- "$line" <<<"$msg" || { echo "$h lacks: $line"; echo "$msg"; exit 1; }
+            done
+          done
+
+          # arguments are passed on unchanged
+          expect "two: add a b --name 'c d'" "$(nixos-central two add a b --name "'c d'")"
+          expect "hidden: " "$(nixos-central hidden)"
+
+          # unknown subcommand: error, help on stderr, exit 2
+          status=0; msg=$(nixos-central frobnicate 2>&1 >/dev/null) || status=$?
+          expect 2 "$status"
+          grep -q "'frobnicate' is not a subcommand" <<<"$msg"
+          grep -q "one \[--flag\]" <<<"$msg"
+
+          # no arguments without a terminal: help on stderr, exit 2, no menu
+          status=0; msg=$(nixos-central </dev/null 2>&1 >/dev/null) || status=$?
+          expect 2 "$status"
+          grep -q "usage: nixos-central" <<<"$msg"
+
+          # completions
+          share=${nixos-central}/share
+          bash -n $share/bash-completion/completions/nixos-central
+          zsh -n $share/zsh/site-functions/_nixos-central
+          fish --no-execute $share/fish/vendor_completions.d/nixos-central.fish
+
+          bash_complete() {
+            ${pkgs.bashInteractive}/bin/bash -c 'source "$1"; shift; COMP_WORDS=("$@"); COMP_CWORD=$(($# - 1)); _nixos_central; echo "''${COMPREPLY[*]}"' \
+              _ $share/bash-completion/completions/nixos-central nixos-central "$@"
+          }
+          expect "one two hidden" "$(bash_complete "")"
+          expect "two" "$(bash_complete t)"
+          expect "--flag" "$(bash_complete one "")"
+          expect "add drop" "$(bash_complete two "")"
+          expect "--name" "$(bash_complete two add x "")"
+          expect "" "$(bash_complete two add --name "")"
+          expect "" "$(bash_complete hidden "")"
+
+          fish_complete() {
+            fish -c "source $share/fish/vendor_completions.d/nixos-central.fish; complete -C '$1' | string replace -r '\t.*' ''' | string join ' '"
+          }
+          expect "hidden one two" "$(fish_complete 'nixos-central ')"
+          expect "add drop" "$(fish_complete 'nixos-central two ')"
+          expect "--name" "$(fish_complete 'nixos-central two add x ')"
+
+          touch $out
+        '';
+
+    # The nixos-central command of a standalone home, activated for real on a
+    # plain NixOS VM without the central modules (standing in for another
+    # distribution with Nix): its subcommands, the old names gone, and
+    # completions found where bash, fish and zsh (home-manager) look for them.
+    home-command =
+      let
+        home =
+          (central.mkHome {
+            user = "alice";
+            homeDirectory = "/home/alice";
+            stateVersion = central.release;
+            inherit system;
+          }).activationPackage;
+        bashComplete = pkgs.writeText "complete.bash" ''
+          __load_completion nixos-central
+          COMP_WORDS=(nixos-central ""); COMP_CWORD=1
+          _nixos_central
+          echo "completions: ''${COMPREPLY[*]}"
+        '';
+        fishComplete = pkgs.writeText "complete.fish" ''
+          echo completions: (complete -C 'nixos-central ' | string replace -r '\t.*' "" | string join ' ')
+        '';
+        # What home-manager's zsh module adds to fpath.
+        zshFpath = pkgs.writeText "fpath.zsh" ''
+          for p in ''${(z)NIX_PROFILES}; do
+            [[ -e $p/share/zsh/site-functions/_nixos-central ]] && print found
+          done
+        '';
+      in
+      runTest {
+        name = "nixos-central-home-command";
+        nodes.machine =
+          { pkgs, ... }:
+          {
+            users.users.alice = {
+              isNormalUser = true;
+              linger = true;
+            };
+            environment.systemPackages = [
+              pkgs.fish
+              pkgs.zsh
+            ];
+            nix.settings.experimental-features = [
+              "nix-command"
+              "flakes"
+            ];
+            virtualisation.memorySize = 2048;
+            virtualisation.diskSize = 4096;
+            virtualisation.additionalPaths = [ home ];
+          };
+        testScript = ''
+          def alice(cmd):
+              return f"su - alice -c 'export XDG_RUNTIME_DIR=/run/user/$(id -u alice); {cmd} 2>&1'"
+
+          machine.wait_for_unit("user@1000.service")
+          machine.succeed(alice("${home}/activate"))
+          # The home's flake, as home-only.sh writes it (read by `nixos-central private`).
+          machine.succeed(
+              "mkdir -p /home/alice/.config/home-manager",
+              "echo '{ inputs.central.url = \"git+https://github.com/tran-engineering/nixos-central\"; }' > /home/alice/.config/home-manager/flake.nix",
+              "chown -R alice: /home/alice/.config",
+          )
+
+          with subtest("one command with the home's subcommands"):
+              out = machine.succeed(alice("nixos-central --help"))
+              for line in ("upgrade [--private]", "diff ", "status ", "private [setup"):
+                  assert f"\n  {line}" in out, out
+              assert "\n  try" not in out, out
+              status, out = machine.execute(alice("nixos-central try main"))
+              assert status == 2 and "not a subcommand" in out, (status, out)
+              assert "last successful update" in machine.succeed(alice("nixos-central status"))
+              assert "No private overlay" in machine.succeed(alice("nixos-central private"))
+
+          with subtest("old names gone"):
+              for old in ("upgrade", "diff", "private", "update-notice"):
+                  machine.fail(alice(f"type -P nixos-central-{old}"))
+
+          with subtest("completions"):
+              out = machine.succeed(alice("bash -i ${bashComplete}"))
+              assert "completions: upgrade diff status private" in out, out
+              out = machine.succeed(alice("fish ${fishComplete}"))
+              assert "completions: diff private status upgrade" in out, out
+              assert "found" in machine.succeed(alice("zsh -f ${zshFpath}"))
+        '';
+      };
+
+    # nixos-central diff compares the staged generation, or else the last two.
     diff =
       let
         staged = pkgs.buildEnv {
@@ -257,7 +454,7 @@ in
         };
         testScript = ''
           system = "/nix/var/nix/profiles/system"
-          diff = "su - alice -c 'nixos-central-diff 2>&1'"
+          diff = "su - alice -c 'nixos-central diff 2>&1'"
           def set_generation(path):
               machine.succeed(f"nix-env -p {system} --set {path}")
 
@@ -288,12 +485,12 @@ in
               assert "Changes from generation 1 to 3:" in out, out
 
           with subtest("unknown argument"):
-              status, out = machine.execute("su - alice -c 'nixos-central-diff --all 2>&1'")
-              assert status == 2 and "usage: nixos-central-diff" in out, (status, out)
+              status, out = machine.execute("su - alice -c 'nixos-central diff --all 2>&1'")
+              assert status == 2 and "usage: nixos-central diff" in out, (status, out)
         '';
       };
 
-    # nixos-central-diff of standalone homes compares the last two home generations.
+    # nixos-central diff of standalone homes compares the last two home generations.
     home-diff =
       let
         generation =
@@ -317,7 +514,7 @@ in
             old
             new
           ];
-          # The base module installs the system variant under the same name.
+          # The home variant under another name than the machine's subcommand.
           environment.systemPackages = [
             (pkgs.runCommand "home-diff-command" { } ''
               mkdir -p $out/bin
@@ -345,11 +542,11 @@ in
 
           with subtest("unknown argument"):
               status, out = machine.execute(alice("home-diff --all"))
-              assert status == 2 and "usage: nixos-central-diff" in out, (status, out)
+              assert status == 2 and "usage: nixos-central diff" in out, (status, out)
         '';
       };
 
-    # nixos-central-upgrade changes nothing when it fails or an auto-upgrade runs.
+    # nixos-central upgrade changes nothing when it fails or an auto-upgrade runs.
     upgrade-failures = runTest {
       name = "nixos-central-upgrade-failures";
       nodes.machine =
@@ -390,7 +587,7 @@ in
         with subtest("build failure after a central update leaves lock and profile unchanged"):
             machine.succeed(f"echo '# two' >> /tmp/central/flake.nix && {git} commit -qam two")
             before = state()
-            out = machine.fail("nixos-central-upgrade 2>&1")
+            out = machine.fail("nixos-central upgrade 2>&1")
             # nix wrote the bumped lock before failing; the command must have restored it.
             assert "Updated input 'central'" in out, out
             assert "broken central" in out and "nothing was changed" in out, out
@@ -400,16 +597,22 @@ in
             machine.succeed("systemctl start --no-block nixos-upgrade.service")
             machine.wait_until_succeeds("systemctl show -P ActiveState nixos-upgrade.service | grep -qx activating", timeout=30)
             before = state()
-            out = machine.fail("nixos-central-upgrade 2>&1")
+            out = machine.fail("nixos-central upgrade 2>&1")
             assert "automatic upgrade is running" in out, out
             assert state() == before
             machine.succeed("systemctl stop nixos-upgrade.service")
 
         with subtest("--private without an overlay changes nothing"):
             before = state()
-            out = machine.fail("nixos-central-upgrade --private 2>&1")
-            assert "no private overlay" in out, out
+            out = machine.fail("nixos-central upgrade --private 2>&1")
+            assert "no private overlay" in out and "nixos-central private setup" in out, out
             assert state() == before
+
+        with subtest("one nixos-central command, old names gone"):
+            paths = machine.succeed("su - alice -c 'type -ap nixos-central'").split()
+            assert len(paths) == 1, paths
+            machine.fail("su - alice -c 'type -P nixos-central-upgrade'")
+            machine.fail("type -P nixos-central-upgrade")
       '';
     };
 
@@ -455,7 +658,7 @@ in
             machine.succeed(f"echo '# two' >> /tmp/private/flake.nix && {git} /tmp/private commit -qam two")
             new_rev = machine.succeed(f"{git} /tmp/private rev-parse HEAD").strip()
             before = state()
-            out = machine.fail("nixos-central-upgrade 2>&1")
+            out = machine.fail("nixos-central upgrade 2>&1")
             assert "Updated input 'private'" in out and f"overlay {new_rev}" in out, out
             assert state() == before, f"{before} != {state()}"
 
@@ -464,7 +667,7 @@ in
             machine.succeed(f"echo '# three' >> /tmp/private/flake.nix && {git} /tmp/private commit -qam three")
             new_rev = machine.succeed(f"{git} /tmp/private rev-parse HEAD").strip()
             before = state()
-            out = machine.fail("nixos-central-upgrade --private 2>&1")
+            out = machine.fail("nixos-central upgrade --private 2>&1")
             assert "Updated input 'private'" in out and "Updated input 'central'" not in out, out
             # central stays at the locked revision ("one"), the overlay is the new one.
             assert f"stub central one, overlay {new_rev}" in out and "nothing was changed" in out, out
@@ -473,7 +676,7 @@ in
         with subtest("an unreachable overlay stops both upgrade paths"):
             machine.succeed("mv /tmp/private /tmp/private-gone")
             before = state()
-            out = machine.fail("nixos-central-upgrade 2>&1")
+            out = machine.fail("nixos-central upgrade 2>&1")
             assert "/tmp/private" in out and "nothing was changed" in out, out
             assert state() == before, f"{before} != {state()}"
             machine.fail("systemctl start nixos-upgrade.service")
@@ -488,7 +691,7 @@ in
       '';
     };
 
-    # nixos-central-upgrade of standalone homes changes nothing when it fails, an
+    # nixos-central upgrade of standalone homes changes nothing when it fails, an
     # automatic upgrade runs or its arguments are wrong; --private updates only
     # the overlay. Runs in a NixOS VM (offline: a stub central can't build a home),
     # with the home commands under other names so they don't clash with NixOS's.
@@ -496,13 +699,12 @@ in
       let
         homeCommand =
           private:
-          lib.findFirst (p: (p.name or "") == "nixos-central-upgrade") (throw "no nixos-central-upgrade")
-            (central.mkHome {
-              user = "alice";
-              homeDirectory = "/home/alice";
-              stateVersion = central.release;
-              inherit system private;
-            }).config.home.packages;
+          (central.mkHome {
+            user = "alice";
+            homeDirectory = "/home/alice";
+            stateVersion = central.release;
+            inherit system private;
+          }).config.nixos-central.commands.upgrade.package;
         commands = pkgs.runCommand "home-upgrade-commands" { } ''
           mkdir -p $out/bin
           ln -s ${homeCommand null}/bin/nixos-central-upgrade $out/bin/home-upgrade
@@ -582,7 +784,7 @@ in
               out = machine.fail(alice("home-upgrade --private"))
               assert "no private overlay" in out, out
               out = machine.fail(alice("home-upgrade --now"))
-              assert "usage: nixos-central-upgrade [--private]" in out, out
+              assert "usage: nixos-central upgrade [--private]" in out, out
               assert state("home") == before
 
           with subtest("--private updates only the overlay"):
@@ -599,7 +801,7 @@ in
         '';
       };
 
-    # nixos-central-private setup changes nothing when the overlay can't be read or
+    # nixos-central private setup changes nothing when the overlay can't be read or
     # the configuration with it can't be activated (offline VM: it can't build).
     # The successful setup is covered by the e2e test.
     private-setup-failures = runTest {
@@ -628,21 +830,44 @@ in
             f"{git} init -q && {git} add . && {git} commit -qm one",
         )
 
-        with subtest("unreachable overlay"):
+        default = "git+ssh://git@github.com/tran-engineering/nixos-central-private"
+
+        with subtest("state without an overlay, as a normal user"):
             before = state()
-            out = machine.fail("nixos-central-private setup git+file:///tmp/no-such-repo 2>&1")
+            out = machine.succeed("su - alice -c 'nixos-central private' 2>&1")
+            assert "No private overlay. Add one with: nixos-central private setup" in out, out
+            assert default in out, out
+            assert state() == before
+
+        with subtest("unknown action"):
+            status, out = machine.execute("su - alice -c 'nixos-central private frobnicate' 2>&1")
+            assert status == 2 and "Usage: nixos-central private" in out, (status, out)
+            assert state() == before
+
+        with subtest("unreachable overlay"):
+            out = machine.fail("nixos-central private setup git+file:///tmp/no-such-repo 2>&1")
             assert "Cannot read git+file:///tmp/no-such-repo" in out and "/home/alice/.ssh/id_ed25519" in out, out
             assert state() == before
 
+        with subtest("no URL: the default overlay (unreachable offline)"):
+            out = machine.fail("nixos-central private setup 2>&1")
+            assert f"Using the default overlay {default}" in out and f"Cannot read {default}" in out, out
+            assert state() == before
+
         with subtest("activation fails: flake and lock restored"):
-            out = machine.fail("nixos-central-private setup git+file:///tmp/private 2>&1")
+            out = machine.fail("nixos-central private setup git+file:///tmp/private 2>&1")
             assert "Restored /etc/nixos/flake.nix" in out, out
             assert state() == before
 
         with subtest("remove without overlay"):
-            out = machine.fail("nixos-central-private remove 2>&1")
+            out = machine.fail("nixos-central private remove 2>&1")
             assert "has no private overlay" in out, out
             assert state() == before
+
+        with subtest("state with an overlay"):
+            machine.succeed("sed -i 's|^\\( *\\)inputs.central.url = .*$|&\\n\\1inputs.private.url = \"git+file:///tmp/private\";|' /etc/nixos/flake.nix")
+            out = machine.succeed("su - alice -c 'nixos-central private'")
+            assert "Private overlay: git+file:///tmp/private" in out, out
       '';
     };
 
@@ -658,7 +883,7 @@ in
         as_alice = "su - alice -c 'bash {} 2>&1'"
 
         out = machine.fail(as_alice.format("${../installer/home-only.sh}"))
-        assert "This is NixOS" in out and "nixos-central-upgrade" in out, out
+        assert "This is NixOS" in out and "nixos-central upgrade" in out, out
         machine.fail("test -e /home/alice/.config/home-manager")
 
         out = machine.fail(as_alice.format("${../installer/install.sh}"))
@@ -774,7 +999,7 @@ in
           with subtest("stale: notice with ages and upgrade hint"):
               out = terminal()
               assert "last successful update 15 days ago (running system installed 15 days ago, central revision committed 16 days ago)" in out, out
-              assert "nixos-central-upgrade" in out, out
+              assert "Run nixos-central upgrade" in out, out
 
           with subtest("not in non-interactive shells"):
               out = machine.succeed("su - alice -c 'bash -c true' 2>&1")
@@ -800,7 +1025,7 @@ in
               assert "nixos-central" not in out, out
 
           with subtest("run by hand: printed although recent"):
-              out = machine.succeed("su - alice -c nixos-central-update-notice")
+              out = machine.succeed("su - alice -c 'nixos-central status'")
               assert "last successful update today" in out, out
         '';
     };

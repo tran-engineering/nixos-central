@@ -1,6 +1,6 @@
 # nixos-rebuild flags that update the machine's `central` input and, if the
 # machine flake declares one, its private overlay (and nothing else). Shared by
-# the daily auto-upgrade and nixos-central-upgrade.
+# the daily auto-upgrade and nixos-central upgrade.
 config:
 [
   "--update-input"

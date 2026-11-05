@@ -31,7 +31,7 @@ in
     repo = lib.mkOption {
       type = lib.types.str;
       default = "git+https://github.com/tran-engineering/nixos-central";
-      description = "Flake reference of the central repository, used by nixos-central-try.";
+      description = "Flake reference of the central repository, used by nixos-central try.";
     };
   };
 }

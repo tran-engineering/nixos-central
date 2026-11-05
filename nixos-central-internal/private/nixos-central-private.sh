@@ -1,6 +1,7 @@
-# nixos-central-private: add or remove the private overlay of this machine
-# (/etc/nixos) or standalone home (~/.config/home-manager). See the README,
-# "Private overlay". GITHUB_HOST_KEY is prepended when packaged.
+# nixos-central private: show, add or remove the private overlay of this
+# machine (/etc/nixos) or standalone home (~/.config/home-manager). See the
+# README, "Private overlay". GITHUB_HOST_KEY and DEFAULT_URL are prepended when
+# packaged.
 
 info() { printf '%s\n' "$*" >&2; }
 die() {
@@ -8,30 +9,33 @@ die() {
   exit 1
 }
 
-usage() {
-  cat >&2 <<'EOF'
-Usage: nixos-central-private setup <flake-url> [--profile NAME]
-                                          add the private overlay and activate it
-       nixos-central-private remove       remove it and activate the result
+usage_text() {
+  cat <<EOF
+Usage: nixos-central private          show the private overlay
+       nixos-central private setup [<flake-url>] [--profile NAME]
+                                      add the private overlay and activate it
+       nixos-central private remove   remove it and activate the result
 
+<flake-url>     the overlay's repository; default: $DEFAULT_URL
 --profile NAME  standalone homes only: use profile NAME (in the central
                 repository and the overlay) instead of the recorded one.
                 On NixOS the profile is always the primary user's name.
 
-Example: nixos-central-private setup git+ssh://git@github.com/alice/private --profile alice
+Example: nixos-central private setup git+ssh://git@github.com/alice/private --profile alice
 EOF
+}
+
+usage() {
+  usage_text >&2
   exit 2
 }
 
 nixx() { nix --extra-experimental-features "nix-command flakes" "$@"; }
 sed_escape() { printf '%s' "$1" | sed 's/[\\|&]/\\&/g'; }
 
-# MODE (nixos/home), DIR, FLAKE, KEY; on NixOS re-run as root.
+# MODE (nixos/home), DIR, FLAKE, KEY.
 detect() {
   if [ -e /etc/NIXOS ] && [ -f /etc/nixos/flake.nix ]; then
-    if [ "$(id -u)" -ne 0 ]; then
-      exec sudo "$0" "$@"
-    fi
     MODE=nixos DIR=/etc/nixos
     local user
     user=$(sed -n 's/^ *user = "\([^"]*\)";.*/\1/p' "$DIR/flake.nix" | head -n1)
@@ -43,6 +47,13 @@ detect() {
     die "Neither /etc/nixos/flake.nix (NixOS) nor ~/.config/home-manager/flake.nix (standalone home) exists. Install nixos-central first."
   fi
   FLAKE="$DIR/flake.nix"
+}
+
+# Changes on NixOS need root: re-run with the same arguments.
+become_root() {
+  if [ "$MODE" = nixos ] && [ "$(id -u)" -ne 0 ]; then
+    exec sudo "$0" "$@"
+  fi
 }
 
 has_overlay() { grep -q '^ *inputs\.private\.url' "$FLAKE"; }
@@ -80,7 +91,7 @@ setup() {
     [ "$MODE" = home ] || die "--profile is only for standalone homes; on NixOS the profile is the primary user's name."
     [[ $profile =~ ^[A-Za-z0-9._-]+$ ]] || die "Invalid profile name: $profile"
   fi
-  has_overlay && die "This configuration already has a private overlay. Remove it first: nixos-central-private remove"
+  has_overlay && die "This configuration already has a private overlay. Remove it first: nixos-central private remove"
 
   if [ "$MODE" = home ]; then
     mkdir -p "$HOME/.ssh"
@@ -126,6 +137,18 @@ setup() {
   info "The private overlay is set up. Upgrades now update it together with the central repository."
 }
 
+show() {
+  local url
+  url=$(sed -n 's/^ *inputs\.private\.url = "\([^"]*\)";.*/\1/p' "$FLAKE" | head -n1)
+  if [ -n "$url" ]; then
+    echo "Private overlay: $url"
+  else
+    echo "No private overlay. Add one with: nixos-central private setup"
+  fi
+  echo
+  usage_text
+}
+
 remove() {
   has_overlay || die "This configuration has no private overlay."
   backup
@@ -144,21 +167,39 @@ remove() {
 
 main() {
   set -Eeuo pipefail
-  local profile=""
+  local url="" profile=""
   case "${1:-}" in
+    "") ;;
     setup)
-      if [ $# -eq 4 ] && [ "$3" = --profile ]; then
-        profile=$4
+      # setup [<flake-url>] [--profile NAME]
+      local rest=("${@:2}")
+      if [ ${#rest[@]} -gt 0 ] && [ "${rest[0]}" != --profile ]; then
+        url=${rest[0]}
+        rest=("${rest[@]:1}")
+      fi
+      if [ ${#rest[@]} -eq 2 ] && [ "${rest[0]}" = --profile ]; then
+        profile=${rest[1]}
       else
-        [ $# -eq 2 ] || usage
+        [ ${#rest[@]} -eq 0 ] || usage
       fi
       ;;
     remove) [ $# -eq 1 ] || usage ;;
     *) usage ;;
   esac
-  detect "$@"
+  detect
+  if [ $# -eq 0 ]; then
+    show
+    return
+  fi
+  become_root "$@"
   case "$1" in
-    setup) setup "$2" "$profile" ;;
+    setup)
+      if [ -z "$url" ]; then
+        url=$DEFAULT_URL
+        info "Using the default overlay $url"
+      fi
+      setup "$url" "$profile"
+      ;;
     remove) remove ;;
   esac
 }

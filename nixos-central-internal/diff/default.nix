@@ -1,4 +1,4 @@
-# nixos-central-diff: the package changes of the last (or the staged) update,
+# nixos-central diff: the package changes of the last (or the staged) update,
 # shown with dix like nh does. NixOS machines (modules/base/diff.nix) compare
 # system generations, standalone homes (standalone.nix) home-manager ones.
 {
@@ -21,7 +21,7 @@ writeShellApplication {
   ];
   text = ''
     if [ $# -ne 0 ]; then
-      echo "usage: nixos-central-diff" >&2
+      echo "usage: nixos-central diff" >&2
       echo "Shows the packages a pending update changes, or else those the last update changed." >&2
       exit 2
     fi

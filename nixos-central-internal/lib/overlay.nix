@@ -7,6 +7,7 @@ let
   # Part of every profile, set up by central itself; not for profiles to pick.
   internal = [
     "standalone.nix"
+    "command.nix"
     "shell.nix"
     "private.nix"
     "update-notice.nix"

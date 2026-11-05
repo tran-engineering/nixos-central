@@ -1,4 +1,4 @@
-# nixos-central-try <branch>: activate this machine's config built against a
+# nixos-central try <branch>: activate this machine's config built against a
 # branch of the central repo, without a boot entry and without touching
 # /etc/nixos. A reboot returns to the regular configuration.
 {
@@ -12,7 +12,7 @@ let
     runtimeInputs = [ config.system.build.nixos-rebuild ];
     text = ''
       if [ $# -ne 1 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
-        echo "usage: nixos-central-try <branch>" >&2
+        echo "usage: nixos-central try <branch>" >&2
         echo "Activates ${config.nixos-central.repo} at <branch> until the next reboot." >&2
         exit 2
       fi
@@ -34,5 +34,7 @@ let
   };
 in
 {
-  environment.systemPackages = [ try ];
+  nixos-central.commands.try = (import ../../nixos-central-internal/command/subcommands.nix).try // {
+    package = try;
+  };
 }

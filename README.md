@@ -101,10 +101,10 @@ New terminals tell you when it has not managed to update for a while
 Run by hand:
 
 ```sh
-nixos-central-upgrade             # update now (central, and your private overlay if any)
-nixos-central-upgrade --private   # update only the private overlay
-nixos-central-diff                # packages the last update changed
-nixos-central-update-notice       # when the last update succeeded, how old things are
+nixos-central upgrade             # update now (central, and your private overlay if any)
+nixos-central upgrade --private   # update only the private overlay
+nixos-central diff                # packages the last update changed
+nixos-central status              # when the last update succeeded, how old things are
 home-manager generations          # then run <generation path>/activate to roll back
 ```
 
@@ -361,34 +361,60 @@ distributions):
 2. Run:
 
    ```sh
-   nixos-central-private setup git+ssh://git@github.com/alice/private
+   nixos-central private setup git+ssh://git@github.com/alice/private
    ```
 
    It checks that the key can read the repository, adds the overlay to
    `/etc/nixos/flake.nix` (or `~/.config/home-manager/flake.nix`) and
    activates it. If anything fails, the flake is left as it was.
 
+   Without a URL it sets up the shared overlay
+   `git+ssh://git@github.com/tran-engineering/nixos-central-private`
+   (`nixos-central private setup`). A fork changes this default in
+   `nixos-central-internal/lib/default-private.nix`.
+
    On another distribution, add `--profile NAME` to use a profile that exists
    only in your overlay (the home installer only offers profiles from this
    repository, so install with `_default` first):
 
    ```sh
-   nixos-central-private setup git+ssh://git@github.com/alice/private --profile alice
+   nixos-central private setup git+ssh://git@github.com/alice/private --profile alice
    ```
 
-From then on, daily updates and `nixos-central-upgrade` update the overlay
+`nixos-central private` shows which overlay a machine or home uses, if any.
+
+From then on, daily updates and `nixos-central upgrade` update the overlay
 together with this repository. On NixOS they run as root, which uses your
 `~/.ssh/id_ed25519` for GitHub only. After pushing a change to the overlay,
-`nixos-central-upgrade --private` uses it right away without updating this
+`nixos-central upgrade --private` uses it right away without updating this
 repository.
 
 If the overlay can't be fetched (key removed from GitHub, repository renamed),
 updates **stop** instead of continuing without it: the machine keeps running
 its current configuration, and `systemctl status nixos-upgrade` shows the
-error. Fix access, or take the overlay out with `nixos-central-private remove`.
+error. Fix access, or take the overlay out with `nixos-central private remove`.
 
 Losing a machine means its key can read the repository: remove that key from
 your GitHub account.
+
+## The nixos-central command
+
+Everything you do by hand with a machine or a standalone home goes through one
+command:
+
+```sh
+nixos-central                 # in a terminal: pick a subcommand from a menu
+nixos-central --help          # list the subcommands
+nixos-central upgrade         # update now (see below)
+nixos-central diff            # what the pending (or else the last) update changes
+nixos-central status          # when the last update succeeded
+nixos-central private         # show, add (setup) or remove the private overlay
+nixos-central try <branch>    # NixOS only: try a branch until the next reboot
+```
+
+Subcommands and their options complete with Tab in bash, zsh and fish. The
+menu runs the chosen subcommand without arguments; `try` isn't in it because
+it needs a branch.
 
 ## Updates
 
@@ -397,7 +423,7 @@ your GitHub account.
   the next boot**. The running system is not changed and the computer is never
   rebooted automatically.
 - Desktop users get a notification *"Update ready – reboot when convenient"*.
-- See which packages an update changes (as `nh` shows them): `nixos-central-diff`.
+- See which packages an update changes (as `nh` shows them): `nixos-central diff`.
   While an update waits for a reboot, it compares the running system with it
   (*"Pending on next reboot"*); otherwise it shows what the last update changed
   (*"Changes from generation 40 to 41"*). No `sudo` needed. The notification
@@ -419,20 +445,20 @@ your GitHub account.
   ```
 - Stage the latest update for the next boot right away (like the daily run):
   `sudo systemctl start nixos-upgrade`.
-- Install the latest update **and use it now**: `nixos-central-upgrade`. It
+- Install the latest update **and use it now**: `nixos-central upgrade`. It
   also becomes the default for the next boot. Switching may restart services
   (and the desktop), so save your work first. A new kernel is used only after
   the next reboot; the command says so when that applies.
-  `nixos-central-upgrade --private` updates only your
+  `nixos-central upgrade --private` updates only your
   [private overlay](#private-overlay) and leaves this repository at the
   installed revision. Standalone homes have the same command (no `sudo`).
 - When no update has succeeded for more than 7 days, every new terminal says so,
-  with what to do (reboot into a staged update, run `nixos-central-upgrade`, or
+  with what to do (reboot into a staged update, run `nixos-central upgrade`, or
   check the daily update). It also shows how old the running system and the
   pinned revision of this repository are. A successful daily update counts even
   if nothing changed, so a quiet repository causes no notice. Homes on
   [other distributions](#install-on-another-linux-distribution) get the same
-  notice. `nixos-central-update-notice` shows the same at any time. Change the
+  notice. `nixos-central status` shows the same at any time. Change the
   number of days in your profile, `0` turns the terminal notice off:
 
   ```nix
@@ -442,7 +468,7 @@ your GitHub account.
 ### Trying a branch
 
 ```sh
-nixos-central-try my-branch
+nixos-central try my-branch
 ```
 
 Activates this machine's configuration built from `my-branch` of this repository

@@ -1,4 +1,4 @@
-# nixos-central-upgrade for standalone homes (standalone.nix): install the
+# nixos-central upgrade for standalone homes (standalone.nix): install the
 # latest central configuration (and private overlay) right away, as the daily
 # home-manager-auto-upgrade does. Counterpart of modules/base/upgrade.nix.
 {
@@ -26,7 +26,7 @@ writeShellApplication {
   ];
   text = ''
     usage() {
-      echo "usage: nixos-central-upgrade [--private]" >&2
+      echo "usage: nixos-central upgrade [--private]" >&2
       echo "Installs the latest central configuration${lib.optionalString hasPrivate " and private overlay"} and uses it right away." >&2
       echo "  --private  update only the private overlay; central stays as it is" >&2
       exit 2
@@ -41,7 +41,7 @@ writeShellApplication {
             "inputs=(private)"
           else
             ''
-              echo "This home has no private overlay (add one with: nixos-central-private setup)." >&2
+              echo "This home has no private overlay (add one with: nixos-central private setup)." >&2
               exit 1
             ''
         }

@@ -1,5 +1,5 @@
 # Tell the desktop user once per staged generation that an update waits for a
-# reboot. A generation activated with nixos-central-try is not "pending": it is
+# reboot. A generation activated with nixos-central try is not "pending": it is
 # compared against both the booted and the running system.
 {
   config,
@@ -26,7 +26,7 @@ let
 
       notify-send --app-name="nixos-central" --icon=system-reboot \
         "Update ready – reboot when convenient" \
-        "A system update has been installed and will be used after the next reboot. Run nixos-central-diff to see what it changes."
+        "A system update has been installed and will be used after the next reboot. Run nixos-central diff to see what it changes."
       printf '%s\n' "$staged" > "$marker"
       echo "notified about $staged"
     '';

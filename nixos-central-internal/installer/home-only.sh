@@ -151,7 +151,7 @@ preflight() {
   esac
   if [ -e /etc/NIXOS ]; then
     die "This is NixOS. To install a new nixos-central machine, boot the NixOS installation image and run: curl -sL $PAGES | sh
-On a machine already managed by nixos-central, update with: nixos-central-upgrade"
+On a machine already managed by nixos-central, update with: nixos-central upgrade"
   fi
 
   USERNAME=$(id -un)
