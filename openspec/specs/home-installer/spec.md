@@ -40,7 +40,7 @@ Before writing any file, the home installer SHALL verify that it runs on Linux o
 
 #### Scenario: Run on NixOS
 - **WHEN** the home installer is run on an installed NixOS machine
-- **THEN** it aborts and points to the NixOS installer for new machines and to `nixos-central-upgrade` for managed ones
+- **THEN** it aborts and points to the NixOS installer for new machines and to `nixos-central upgrade` for managed ones
 
 #### Scenario: Unsupported platform
 - **WHEN** the home installer is run on macOS or on a 32-bit system

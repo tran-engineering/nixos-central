@@ -1,7 +1,7 @@
 # nixos-central private: show, add or remove the private overlay of this
 # machine (/etc/nixos) or standalone home (~/.config/home-manager). See the
-# README, "Private overlay". GITHUB_HOST_KEY and DEFAULT_URL are prepended when
-# packaged.
+# README, "Private overlay". GITHUB_HOST_KEY, DEFAULT_URL and flake-edit.sh
+# (flake_add_overlay, flake_remove_overlay) are prepended when packaged.
 
 info() { printf '%s\n' "$*" >&2; }
 die() {
@@ -17,11 +17,11 @@ Usage: nixos-central private          show the private overlay
        nixos-central private remove   remove it and activate the result
 
 <flake-url>     the overlay's repository; default: $DEFAULT_URL
---profile NAME  standalone homes only: use profile NAME (in the central
-                repository and the overlay) instead of the recorded one.
-                On NixOS the profile is always the primary user's name.
+--profile NAME  use profile NAME (in the central repository and the overlay)
+                instead of the recorded one, or of the user's name. On NixOS,
+                remove takes the recorded profile out again.
 
-Example: nixos-central private setup git+ssh://git@github.com/alice/private --profile alice
+Example: nixos-central private setup git+ssh://git@github.com/alice/private --profile developer
 EOF
 }
 
@@ -31,7 +31,6 @@ usage() {
 }
 
 nixx() { nix --extra-experimental-features "nix-command flakes" "$@"; }
-sed_escape() { printf '%s' "$1" | sed 's/[\\|&]/\\&/g'; }
 
 # MODE (nixos/home), DIR, FLAKE, KEY.
 detect() {
@@ -54,14 +53,6 @@ become_root() {
   if [ "$MODE" = nixos ] && [ "$(id -u)" -ne 0 ]; then
     exec sudo "$0" "$@"
   fi
-}
-
-has_overlay() { grep -q '^ *inputs\.private\.url' "$FLAKE"; }
-
-# Exactly one line matching the pattern, or explain and stop.
-require_anchor() {
-  [ "$(grep -c "$1" "$FLAKE")" -eq 1 ] ||
-    die "$FLAKE does not have the expected shape (looking for: $2). Edit it by hand as described in the README, \"Private overlay\"."
 }
 
 BACKUP=""
@@ -88,10 +79,9 @@ activate() {
 setup() {
   local url=$1 profile=${2:-}
   if [ -n "$profile" ]; then
-    [ "$MODE" = home ] || die "--profile is only for standalone homes; on NixOS the profile is the primary user's name."
     [[ $profile =~ ^[A-Za-z0-9._-]+$ ]] || die "Invalid profile name: $profile"
   fi
-  has_overlay && die "This configuration already has a private overlay. Remove it first: nixos-central private remove"
+  flake_has_overlay "$FLAKE" && die "This configuration already has a private overlay. Remove it first: nixos-central private remove"
 
   if [ "$MODE" = home ]; then
     mkdir -p "$HOME/.ssh"
@@ -99,15 +89,7 @@ setup() {
       printf 'github.com %s\n' "$GITHUB_HOST_KEY" >>"$HOME/.ssh/known_hosts"
   fi
 
-  require_anchor '^ *inputs\.central\.url = ' 'inputs.central.url = ...;'
-  require_anchor '{ *central, *\.\.\. *}:' '{ central, ... }:'
-  # `inherit private;` goes into the mkHost/mkHome call, before this line.
-  local before='^ *modules = \[' before_text='modules = [ ... ];'
-  if [ "$MODE" = home ]; then
-    before='^ *stateVersion = ' before_text='stateVersion = "...";'
-  fi
-  require_anchor "$before" "$before_text"
-  [ -z "$profile" ] || require_anchor '^ *profile = "[^"]*";' 'profile = "...";'
+  flake_check_overlay_anchors "$FLAKE" "$MODE" "$profile"
 
   info "Checking access to $url ..."
   local err
@@ -118,17 +100,7 @@ setup() {
 
   backup
   trap 'restore' ERR
-  local u
-  u=$(sed_escape "$url")
-  sed -i \
-    -e "s|^\( *\)inputs\.central\.url = \(.*\)$|&\n\1inputs.private.url = \"$u\";|" \
-    -e 's|{ *central, *\.\.\. *}:|{ central, private, ... }:|' \
-    -e "s|\($before\)|inherit private;\n&|" \
-    "$FLAKE"
-  [ -z "$profile" ] ||
-    sed -i "s|^\( *profile = \)\"[^\"]*\";.*$|\1\"$profile\"; # in the central repository or the private overlay|" "$FLAKE"
-  # Indent `inherit private;` like the line after it.
-  sed -i -e '/^inherit private;$/{N;s/^inherit private;\n\( *\)\(.*\)$/\1inherit private;\n\1\2/}' "$FLAKE"
+  flake_add_overlay "$FLAKE" "$MODE" "$url" "$profile"
 
   info "Activating with the private overlay ..."
   activate
@@ -150,14 +122,10 @@ show() {
 }
 
 remove() {
-  has_overlay || die "This configuration has no private overlay."
+  flake_has_overlay "$FLAKE" || die "This configuration has no private overlay."
   backup
   trap 'restore' ERR
-  sed -i \
-    -e '/^ *inputs\.private\.url = /d' \
-    -e '/^ *inherit private;$/d' \
-    -e 's|{ *central, *private, *\.\.\. *}:|{ central, ... }:|' \
-    "$FLAKE"
+  flake_remove_overlay "$FLAKE" "$MODE"
   info "Activating without the private overlay ..."
   activate
   trap - ERR

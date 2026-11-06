@@ -96,7 +96,8 @@ class Repo:
             f.write(text)
 
     def private_overlay(self, marker):
-        """(Re)write the served private overlay: a module-only flake placing ~/overlay-marker."""
+        """(Re)write the served private overlay: a module-only flake placing ~/overlay-marker,
+        with profiles `default` and `ci-overlay` (which also places ~/overlay-profile)."""
         work = os.path.join(os.path.dirname(self.work), "private-work")
         bare = os.path.join(self.www, "repos", "private.git")
         git = ["git", "-C", work, "-c", "user.name=e2e", "-c", "user.email=e2e@test"]
@@ -104,10 +105,16 @@ class Repo:
         os.makedirs(work, exist_ok=True)
         with open(os.path.join(work, "flake.nix"), "w") as f:
             f.write(
-                "{ outputs = _: { homeModules.default = { centralModules, ... }: {\n"
-                "  imports = [ centralModules.zsh ];\n"
-                f'  home.file.overlay-marker.text = "{marker}";\n'
-                "}; }; }\n"
+                "{ outputs = _: rec {\n"
+                "  homeModules.default = { centralModules, ... }: {\n"
+                "    imports = [ centralModules.zsh ];\n"
+                f'    home.file.overlay-marker.text = "{marker}";\n'
+                "  };\n"
+                "  homeModules.ci-overlay = {\n"
+                "    imports = [ homeModules.default ];\n"
+                '    home.file.overlay-profile.text = "ci-overlay";\n'
+                "  };\n"
+                "}; }\n"
             )
         if first:
             subprocess.run([*git, "init", "-q", "-b", "main"], check=True)
@@ -279,8 +286,12 @@ def phase_variants(args):
     vm.answer(r"Disk passphrase: ", LUKS)
     vm.answer(r"Repeat to confirm: ", LUKS)
     vm.answer(r"login password for alice too\? \[Y/n\]: ", "")
+    vm.answer(r"Set up a private overlay\? \[y/N\]: ", "")
     vm.answer(r"Reboot now\? \[Y/n\]: ", "n", 7200)
     vm.expect(SHELL_PROMPT)
+    check("private" not in vm.succeed("sudo cat /mnt/etc/nixos/flake.nix"), "overlay declined: no overlay in the machine flake")
+    rc, _ = vm.run("test -e /tmp/nixos-central-ssh || sudo test -e /mnt/home/alice/.ssh")
+    check(rc != 0, "overlay declined: no SSH key generated")
     rc, _ = vm.run(
         "h=$(sudo cat /mnt/etc/secrets/alice.hash); salt=$(echo \"$h\" | cut -d'$' -f3); "
         "ossl() { if command -v openssl >/dev/null; then openssl \"$@\"; else nix --extra-experimental-features 'nix-command flakes' run nixpkgs#openssl -- \"$@\"; fi; }; "
@@ -290,7 +301,9 @@ def phase_variants(args):
     vm.poweroff()
 
 
-def phase_install(args):
+def phase_install(args, repo):
+    shutil.rmtree(os.path.join(os.path.dirname(repo.work), "private-work"), ignore_errors=True)
+    repo.private_overlay("v0")
     vm = live_vm(args)
     run_installer = RUN_INSTALLER
 
@@ -315,8 +328,8 @@ def phase_install(args):
     out = vm.succeed("sudo blkid /dev/vda || echo EMPTY")
     check("EMPTY" in out, "declined wipe left /dev/vda untouched")
 
-    log("installer: flags, typed confirmation, secrets, install")
-    vm.send(f"{run_installer} -s -- --hostname e2e-host --user alice --desktop none --keyboard-layout sg")
+    log("installer: flags, typed confirmation, secrets, private overlay, install")
+    vm.send(f"{run_installer} -s -- --hostname e2e-host --user alice --desktop none --keyboard-layout sg --private {PRIVATE_URL}")
     vm.answer(r"Type 'yes' to erase it and install: ", "yes", 900)
     vm.answer(r"Disk passphrase: ", LUKS)
     vm.answer(r"Repeat to confirm: ", "mismatch")
@@ -325,14 +338,42 @@ def phase_install(args):
     vm.answer(r"login password for alice too\? \[Y/n\]: ", "n")
     vm.answer(r"Login password for alice: ", PASSWORD)
     vm.answer(r"Repeat to confirm: ", PASSWORD)
-    vm.answer(r"Reboot now\? \[Y/n\]: ", "n", 7200)
+    # --private: no overlay question; the new key as QR code and text.
+    vm.expect(r"Scan the code to copy it on your phone:", 900)
+    vm.expect(r"(ssh-ed25519 \S+ alice@e2e-host)\r*\n", 900)  # the serial console sends \r\r\n
+    qr = re.sub(r"\x1b\[[0-9;]*m", "", vm.p.before)
+    rows = [r for r in qr.replace("\r", "").split("\n") if r.strip()]
+    check(len(rows) >= 15 and max(len(r) for r in rows) <= 80, f"QR code shown, {len(rows)} rows of at most {max(len(r) for r in rows)} columns")
+    pubkey = vm.p.match.group(1)
+    vm.answer(r"Press Enter when the key is added on GitHub: ", "")
+    vm.expect(r"Profiles in the overlay: ci-overlay default", 900)
+    vm.answer(r"Profile \[default\]: ", "tester")
+    vm.answer(r"Choose one of: ci-overlay default.*\r\n.*Profile \[default\]: ", "ci-overlay")
+    vm.expect(r"Reboot now\? \[Y/n\]: ", 7200)
+    summary = vm.p.before
+    check(f"overlay   {PRIVATE_URL}" in summary and "profile   ci-overlay" in summary, "summary names overlay and profile")
+    vm.send("n")
     vm.expect(SHELL_PROMPT)
+    flake = vm.succeed("sudo cat /mnt/etc/nixos/flake.nix")
+    check(f'inputs.private.url = "{PRIVATE_URL}";' in flake and "inherit private;" in flake, "overlay declared in the machine flake")
+    check('profile = "ci-overlay"; # in the central repository or the private overlay' in flake, "profile recorded in the machine flake")
+    # Numeric owner: the live system's /etc/passwd has other names for the same uids.
+    uid = vm.succeed("sudo awk -F: '$1 == \"alice\" { print $3 }' /mnt/etc/passwd").split()[-1]
+    out = vm.succeed("sudo stat -c '%n %a %u' /mnt/home/alice /mnt/home/alice/.ssh /mnt/home/alice/.ssh/id_ed25519 /mnt/home/alice/.ssh/id_ed25519.pub")
+    check(re.search(rf"/home/alice \d+ {uid}\b", out) and f"/.ssh 700 {uid}" in out and f"id_ed25519 600 {uid}" in out and f"id_ed25519.pub 644 {uid}" in out, f"SSH key installed for alice (0700/0600/0644, owned by uid {uid})")
+    check(pubkey in vm.succeed("sudo cat /mnt/home/alice/.ssh/id_ed25519.pub"), "installed key is the one shown")
+    rc, _ = vm.run("sudo grep -q -F \"$(sudo sed -n 2p /mnt/home/alice/.ssh/id_ed25519)\" /tmp/nixos-central-install.log")
+    check(rc != 0, "private key not in the install log")
+    rc, _ = vm.run("test -e /tmp/nixos-central-ssh")
+    check(rc != 0, "SSH key removed from the live image after the install")
 
     out = vm.succeed("sudo ls /mnt/etc/nixos")
     check(all(f in out for f in ["flake.nix", "flake.lock", "hardware-configuration.nix"]), "/mnt/etc/nixos has flake, lock, hardware config")
     out = vm.succeed("sudo cat /mnt/etc/nixos/flake.nix")
     check('keyboardLayout = "sg";' in out, "keyboard layout fact sg written to the machine flake")
-    rc, _ = vm.run("sudo grep -q '^KEYMAP=sg-latin1$' /mnt/etc/vconsole.conf")
+    # Inside the target: /mnt/etc/vconsole.conf is an absolute symlink (/etc/static/...)
+    # that would resolve into the live system's /etc.
+    rc, _ = vm.run("sudo nixos-enter --root /mnt --silent -c \"grep -q '^KEYMAP=sg-latin1$' /etc/vconsole.conf\"")
     check(rc == 0, "Swiss German console keymap in /mnt/etc/vconsole.conf")
     out = vm.succeed("sudo stat -c '%a %U' /mnt/etc/secrets/alice.hash")
     check("400 root" in out, "password hash stored 0400 root outside the store")
@@ -393,6 +434,17 @@ def phase_installed(args, repo):
     check(rc != 0, "desktop 'none': no display manager")
     check("Hello, world!" in vm.succeed("nix-shell -p hello --run hello", 900), "nix-shell -p works")
     check("vim" in vm.succeed("echo $EDITOR"), "no users/alice yet: default profile (EDITOR=vim)")
+
+    log("private overlay from the installer: profile active, key usable, remove")
+    check("ci-overlay" in vm.succeed("cat ~/overlay-profile"), "overlay profile ci-overlay active for alice")
+    check("v0" in vm.succeed("cat ~/overlay-marker"), "overlay's file active")
+    check("600 alice" in vm.succeed("stat -c '%a %U' ~/.ssh/id_ed25519"), "alice owns her SSH key")
+    rc, out = sudo(vm, "nixos-central private remove", 3600)
+    check(rc == 0, "nixos-central private remove succeeded on the installed overlay")
+    flake = vm.succeed("cat /etc/nixos/flake.nix")
+    check("private" not in flake and "profile =" not in flake, "overlay and profile gone from /etc/nixos/flake.nix")
+    rc, _ = vm.run("test -e ~/overlay-profile || test -e ~/overlay-marker")
+    check(rc != 0, "overlay's files removed")
 
     log("auto-upgrade: personal profile merged later is staged for next boot")
     repo.write("users/alice/default.nix", '{ lib, ... }: {\n  imports = [ ../_default ];\n  home.sessionVariables.EDITOR = lib.mkForce "nano";\n}\n')
@@ -525,7 +577,7 @@ def main():
             return
         if not args.skip_install:
             make_disks(args)
-            phase_install(args)
+            phase_install(args, repo)
         phase_installed(args, repo)
     finally:
         server.shutdown()

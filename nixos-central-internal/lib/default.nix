@@ -17,9 +17,13 @@ let
       modules ? [ ],
       system ? "x86_64-linux",
       private ? null, # private overlay flake (README, "Private overlay")
+      profile ? null, # profile in place of `user` (central and overlay); like mkHome
     }:
     let
       checked = overlay.check private;
+      name = if profile == null then user else profile;
+      resolved = (import ./profiles.nix).resolve name;
+      inOverlay = private != null && checked.homeModules ? ${name};
     in
     [
       disko.nixosModules.disko
@@ -39,9 +43,14 @@ let
             desktop
             disk
             keyboardLayout
+            profile
             ;
         };
         home-manager.extraSpecialArgs = { inherit (overlay) centralModules; };
+        warnings = lib.optional (profile != null && resolved.fallback && !inOverlay) ''
+          nixos-central: profile "${profile}" exists neither in the central repository nor in the private overlay; using the default profile.
+          Choose another one in /etc/nixos/flake.nix (central profiles: ${toString (import ./profiles.nix).names}).
+        '';
       }
     ]
     ++ lib.optionals (private != null) (
@@ -49,7 +58,7 @@ let
         {
           nixos-central.private.enable = true;
           home-manager.users.${user} = {
-            imports = [ (overlay.homeModule checked user) ];
+            imports = [ (overlay.homeModule checked name) ];
             nixos-central.private.enable = true;
           };
         }
@@ -70,6 +79,13 @@ in
 
   # Shared home modules by name, as profiles and overlays get them.
   inherit (overlay) centralModules;
+
+  # Used by the installer to set up a private overlay (README, "Private overlay"):
+  # the default overlay URL, GitHub's SSH host key, and the shell functions that
+  # add the overlay to a flake, shared with `nixos-central private`.
+  defaultPrivate = import ./default-private.nix;
+  githubHostKey = import ./github-host-key.nix;
+  privateFlakeEdit = ../private/flake-edit.sh;
 
   # Profiles offered by home-only.sh (see profiles.nix).
   profileNames = (import ./profiles.nix).names;

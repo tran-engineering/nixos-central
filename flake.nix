@@ -233,6 +233,48 @@
               assert missingWarning (home "nobodyhere" true);
               pkgs.writeText "overlay-profiles" "ok";
 
+            # A recorded profile (NixOS) replaces the user's name for the central
+            # profile and the overlay profile; the account keeps the user's name.
+            host-profile =
+              let
+                host =
+                  args:
+                  (ciHost "ci-profile" (
+                    {
+                      desktop = "none";
+                      user = "alice";
+                      inherit system;
+                    }
+                    // args
+                  )).config;
+                hm = cfg: cfg.home-manager.users.alice;
+                editor = cfg: (hm cfg).home.sessionVariables.EDITOR;
+                missingWarning = cfg: builtins.any (nixpkgs.lib.hasInfix "exists neither") cfg.warnings;
+                overlayOnly = host {
+                  profile = "ci-overlay";
+                  private = testOverlay;
+                };
+                central = host { profile = "ci-user"; };
+                none = host { };
+                unknown = host { profile = "nosuchprofile"; };
+              in
+              # Overlay-only profile: central _default plus the overlay's ci-overlay.
+              assert (hm overlayOnly).home.file.".nixos-central-overlay-profile".text == "ci-overlay\n";
+              assert editor overlayOnly == "vim";
+              assert overlayOnly.users.users.alice.isNormalUser;
+              assert (hm overlayOnly).home.username == "alice";
+              assert !(missingWarning overlayOnly);
+              # Profile from the central repository.
+              assert editor central == "nano";
+              # No profile: chosen by the user's name, as before.
+              assert editor none == "vim";
+              assert none.nixos-central.profile == null;
+              assert !(missingWarning none);
+              # Unknown everywhere: default profile, with a warning.
+              assert editor unknown == "vim";
+              assert missingWarning unknown;
+              pkgs.writeText "host-profile" "ok";
+
             # Overlays with inputs are refused.
             overlay-rejects-inputs =
               assert

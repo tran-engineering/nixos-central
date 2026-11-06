@@ -29,6 +29,13 @@ repository automatically.
    curl -sL https://tran-engineering.github.io/nixos-central | sh -s -- --hostname foo --user alice --desktop kde
    ```
 
+   With your [private overlay](#private-overlay) and one of its profiles
+   (keep your phone at hand to add the new SSH key on GitHub):
+
+   ```sh
+   curl -sL https://tran-engineering.github.io/nixos-central | sh -s -- --private git+ssh://git@github.com/alice/private --profile developer
+   ```
+
 Prefer to read the script before running it?
 
 ```sh
@@ -46,6 +53,8 @@ sh install.sh
 | `--desktop NAME` | asked, suggests `kde` | one of the [desktops](#desktops) |
 | `--disk DEVICE` | first internal disk ≥ 40 GiB | still needs the typed confirmation |
 | `--keyboard-layout NAME` | asked, suggests `us` | `us`, `de`, `sg` (Swiss German), `sf` (Swiss French) |
+| `--private URL` | asked, suggests no overlay | flake URL of your [private overlay](#private-overlay); the question suggests the shared overlay |
+| `--profile NAME` | asked, suggests your username if the overlay has it, else `default` | a profile of the overlay; only together with `--private` |
 
 Values passed as options are not asked for; invalid option values stop the
 installer before anything is changed.
@@ -63,10 +72,23 @@ installer before anything is changed.
    your login password too; otherwise asks for a separate login password.
    Neither is stored in plain text; only a password hash ends up on the disk
    (`/etc/secrets/<user>.hash`), never in the Nix store.
-5. Erases the disk: 1 GiB EFI partition, the rest LUKS-encrypted btrfs
+5. Offers to set up a [private overlay](#private-overlay) (default: no). If you
+   accept (or pass `--private`), it
+   - generates an SSH key for you, **without passphrase**, because daily updates
+     fetch the overlay with it unattended,
+   - shows the public key as text and as a QR code: scan it with your phone and
+     paste it on GitHub (Settings → SSH and GPG keys → New SSH key), then press Enter,
+   - checks that the key can read the overlay; if not, you can retry or continue
+     without the overlay (the key is installed anyway, for a later
+     `nixos-central private setup`),
+   - asks for one of the overlay's profiles, e.g. a generic `developer` profile
+     for any username.
+6. Erases the disk: 1 GiB EFI partition, the rest LUKS-encrypted btrfs
    (subvolumes `@`, `@home`, `@nix`).
-6. Writes the machine's configuration to `/etc/nixos` and installs NixOS.
-7. Shows a summary and asks to reboot.
+7. Writes the machine's configuration to `/etc/nixos` (with the overlay and
+   profile, exactly as `nixos-central private setup` would) and installs NixOS.
+   The key goes to `~/.ssh/id_ed25519` of your user.
+8. Shows a summary and asks to reboot.
 
 On failure it names the failed step and the log file
 (`/tmp/nixos-central-install.log` on the live system) and does not reboot.
@@ -155,6 +177,8 @@ comes from this repository (the `central` input):
 | `disk` | disk the system was installed on |
 | `keyboardLayout` | keyboard layout: `us`, `de`, `sg` (Swiss German) or `sf` (Swiss French); console and graphical session |
 | `stateVersion` | NixOS release at install time |
+| `profile` | optional: profile to use instead of `user`'s name, in this repository and the [private overlay](#private-overlay) (see [Users and profiles](#users-and-profiles)); the account keeps the name `user` |
+| `private` | optional: the [private overlay](#private-overlay) flake |
 | `modules` | extra NixOS modules; the installer adds `hardware-configuration.nix` |
 
 To change the desktop or keyboard layout later, edit `desktop` or
@@ -200,6 +224,22 @@ profile from this repository:
 
 - `users/<name>/` if it exists,
 - otherwise the shared default `users/_default/`.
+
+`<name>` is the user's name, unless the machine flake records a different
+profile next to `user`. The same name also selects the profile of your
+[private overlay](#private-overlay), so one generic overlay profile can serve
+any user:
+
+```nix
+user = "alice";
+profile = "developer"; # in the central repository or the private overlay
+```
+
+Here `alice` gets `users/developer/` (or `users/_default/` if there is none)
+plus the overlay's `developer` profile; her login name and home directory stay
+`alice`. The installer writes this line when you choose an overlay profile;
+`nixos-central private setup --profile` adds it later, and
+`nixos-central private remove` takes it out again.
 
 This is decided every time the system is built, so a profile added later is
 picked up by the machine's next update. A personal profile **replaces** the
@@ -326,7 +366,8 @@ offered by the home installer.
 Your own setup lives in a private repository you control: which shared
 modules you use, your login shell, name and email, fonts and themes, and files
 that must not be public (work SSH configuration, internal scripts). It is added
-to a machine after installation and applied on top of the default profile.
+to a machine during installation (see [Install](#install)) or afterwards, and
+applied on top of the default profile.
 
 The overlay is a flake **without inputs** that only exports modules, one per
 profile; packages and options come from this repository. Like `users/` here,
@@ -353,12 +394,13 @@ it can hold several people's profiles:
 }
 ```
 
-The profile is chosen by the same name as here: the primary user's name on
-NixOS, the recorded `profile` on other distributions. Without a matching
+The profile is chosen by the same name as here: the recorded `profile` if the
+local flake has one, otherwise the user's name. So a generic profile such as
+`developer` can serve anyone who records it. Without a matching
 profile, `homeModules.default` is used; if that doesn't exist either, the build
 fails and lists the overlay's profiles.
 
-Set it up after the first boot (NixOS) or after `home-only.sh` (other
+To set it up later, after the first boot (NixOS) or after `home-only.sh` (other
 distributions):
 
 1. Copy your SSH key to `~/.ssh/id_ed25519`. It must have no passphrase,
@@ -379,13 +421,17 @@ distributions):
    (`nixos-central private setup`). A fork changes this default in
    `nixos-central-internal/lib/default-private.nix`.
 
-   On another distribution, add `--profile NAME` to use a profile that exists
-   only in your overlay (the home installer only offers profiles from this
-   repository, so install with `_default` first):
+   Add `--profile NAME` to use a profile that exists only in your overlay,
+   e.g. a generic `developer` profile (the home installer only offers profiles
+   from this repository, so install with `_default` first):
 
    ```sh
-   nixos-central private setup git+ssh://git@github.com/alice/private --profile alice
+   nixos-central private setup git+ssh://git@github.com/alice/private --profile developer
    ```
+
+   On NixOS this records `profile = "developer";` next to `user` in
+   `/etc/nixos/flake.nix`; `nixos-central private remove` takes it out again,
+   so the user's name selects the profile as before.
 
 `nixos-central private` shows which overlay a machine or home uses, if any.
 

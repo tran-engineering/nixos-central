@@ -4,6 +4,7 @@
 #
 #   curl -sL https://tran-engineering.github.io/nixos-central | sh
 #   curl -sL https://tran-engineering.github.io/nixos-central | sh -s -- --hostname foo --user alice --desktop kde
+#   ... | sh -s -- --private git+ssh://git@github.com/alice/private --profile developer
 #
 # Everything below is a function definition; main runs on the very last line,
 # so a truncated download does nothing.
@@ -20,14 +21,17 @@ init_globals() {
   LOG=/tmp/nixos-central-install.log
   WORK=/tmp/nixos-central/etc-nixos
   LUKS_KEY=/tmp/nixos-central-luks.key # must match nixos-central-internal/disko/default.nix
+  SSH_DIR=/tmp/nixos-central-ssh # the primary user's new SSH key, until it is installed
   MIN_DISK_BYTES=$((40 * 1024 * 1024 * 1024))
   RESERVED_USERS=" root bin daemon nobody nogroup nixbld messagebus polkituser sddm sshd systemd-network
     systemd-resolve systemd-timesync systemd-oom systemd-coredump rtkit avahi geoclue pipewire
     nm-openvpn nm-iodine fwupd-refresh cups lp colord wheel users admin nixos "
 
   HOST="" USERNAME="" DESKTOP="" DISK="" KEYBOARD_LAYOUT=""
-  HOST_FLAG=0 USER_FLAG=0 DESKTOP_FLAG=0 DISK_FLAG=0 KEYBOARD_LAYOUT_FLAG=0
+  PRIVATE_URL="" PROFILE=""
+  HOST_FLAG=0 USER_FLAG=0 DESKTOP_FLAG=0 DISK_FLAG=0 KEYBOARD_LAYOUT_FLAG=0 PRIVATE_FLAG=0 PROFILE_FLAG=0
   DESKTOPS="" RELEASE="" DISK_ID="" PASSWORD_HASH="" KEYBOARD_LAYOUTS=""
+  DEFAULT_PRIVATE="" PROFILES="" KEY_GENERATED=0 INSTALLED=0
   STEP="starting"
 }
 
@@ -53,6 +57,10 @@ Options:
   --disk DEVICE     disk to erase and install on (default: first internal disk >= 40 GiB)
   --keyboard-layout NAME
                     keyboard layout (default: us): us, de, sg (Swiss German), sf (Swiss French)
+  --private URL     set up this private overlay (README, "Private overlay"); generates
+                    an SSH key for the user and shows it to add on GitHub
+  --profile NAME    profile from the private overlay (needs --private;
+                    default: the user's name if the overlay has it, else default)
   -h, --help        show this help
 EOF
 }
@@ -77,7 +85,7 @@ parse_flags() {
         value=${flag#*=}
         flag=${flag%%=*}
         ;;
-      --hostname | --user | --desktop | --disk | --keyboard-layout)
+      --hostname | --user | --desktop | --disk | --keyboard-layout | --private | --profile)
         [ $# -ge 2 ] || {
           usage
           die "$flag needs a value."
@@ -92,6 +100,8 @@ parse_flags() {
       --desktop) DESKTOP=$value DESKTOP_FLAG=1 ;;
       --disk) DISK=$value DISK_FLAG=1 ;;
       --keyboard-layout) KEYBOARD_LAYOUT=$value KEYBOARD_LAYOUT_FLAG=1 ;;
+      --private) PRIVATE_URL=$value PRIVATE_FLAG=1 ;;
+      --profile) PROFILE=$value PROFILE_FLAG=1 ;;
       *)
         usage
         die "Unknown option: $1"
@@ -108,6 +118,14 @@ check_flags() {
   fi
   if [ "$USER_FLAG" = 1 ] && ! valid_username "$USERNAME"; then
     die "Invalid or reserved username '$USERNAME': use lowercase letters, digits, '-' and '_', starting with a letter (max. 32)."
+  fi
+  if [ "$PRIVATE_FLAG" = 1 ] && [ -z "$PRIVATE_URL" ]; then
+    die "--private needs the flake URL of the overlay, e.g. git+ssh://git@github.com/alice/private"
+  fi
+  if [ "$PROFILE_FLAG" = 1 ]; then
+    [ "$PRIVATE_FLAG" = 1 ] ||
+      die "--profile needs --private: a profile can only be chosen together with a private overlay."
+    [[ $PROFILE =~ ^[A-Za-z0-9._-]+$ ]] || die "Invalid profile name '$PROFILE'."
   fi
 }
 
@@ -247,9 +265,9 @@ preflight() {
 
   info "Fetching nixos-central ($CENTRAL) ..."
   local facts
-  facts=$(nixx eval --raw "$CENTRAL#lib" --apply 'l: l.release + ":" + toString l.desktopNames + ":" + toString l.keyboardLayoutNames') ||
+  facts=$(nixx eval --raw "$CENTRAL#lib" --apply 'l: builtins.concatStringsSep "\n" [ l.release (toString l.desktopNames) (toString l.keyboardLayoutNames) l.defaultPrivate ]') ||
     die "Could not load $CENTRAL."
-  IFS=: read -r RELEASE DESKTOPS KEYBOARD_LAYOUTS <<<"$facts"
+  { read -r RELEASE; read -r DESKTOPS; read -r KEYBOARD_LAYOUTS; read -r DEFAULT_PRIVATE; } <<<"$facts"
 }
 
 # ── disk ──────────────────────────────────────────────────────────────────────
@@ -353,8 +371,146 @@ collect_secrets() {
   [ -n "$PASSWORD_HASH" ] || die "Could not hash the password."
 }
 
+# ── private overlay ───────────────────────────────────────────────────────────
+
+# Runs `tool args...`, from the central repository's nixpkgs if the live image
+# doesn't have it.
+run_tool() {
+  local tool=$1 package=$2
+  shift 2
+  if command -v "$tool" >/dev/null; then
+    "$tool" "$@"
+  else
+    # Fetch quietly first, so download messages don't end up in the tool's output.
+    nixx shell --inputs-from "$CENTRAL" "nixpkgs#$package" -c true 2>/dev/null || return 1
+    nixx shell --inputs-from "$CENTRAL" "nixpkgs#$package" -c "$tool" "$@"
+  fi
+}
+
+# The primary user's key: without passphrase, because the daily upgrade fetches
+# the overlay with it unattended. A key from an earlier, failed attempt is
+# reused, as it may already be on GitHub.
+generate_ssh_key() {
+  KEY_GENERATED=1
+  if [ -s "$SSH_DIR/id_ed25519" ] && [ -s "$SSH_DIR/id_ed25519.pub" ]; then
+    info "Using the SSH key from the previous attempt."
+    return
+  fi
+  rm -rf "$SSH_DIR"
+  (
+    umask 077
+    mkdir -p "$SSH_DIR"
+  )
+  run_tool ssh-keygen openssh -q -t ed25519 -N "" -C "$USERNAME@$HOST" -f "$SSH_DIR/id_ed25519" >/dev/null ||
+    die "Could not generate an SSH key."
+}
+
+# Root in this live system fetches from GitHub with the new key and GitHub's
+# known host key, as root on the installed system does (modules/base/private.nix).
+configure_live_ssh() {
+  local hostkey
+  hostkey=$(nixx eval --raw "$CENTRAL#lib.githubHostKey") || die "Could not load GitHub's host key from $CENTRAL."
+  printf 'github.com %s\n' "$hostkey" >"$SSH_DIR/known_hosts"
+  install -d -m 0700 /root/.ssh
+  cat >/root/.ssh/config <<EOF
+# Written by the nixos-central installer (live system only).
+Host github.com
+  IdentityFile $SSH_DIR/id_ed25519
+  IdentitiesOnly yes
+  UserKnownHostsFile $SSH_DIR/known_hosts
+  StrictHostKeyChecking yes
+  BatchMode yes
+EOF
+}
+
+show_public_key() {
+  local pub
+  pub=$(cat "$SSH_DIR/id_ed25519.pub")
+  info ""
+  info "Add this SSH key to your GitHub account (Settings -> SSH and GPG keys -> New SSH key,"
+  info "https://github.com/settings/ssh/new). Scan the code to copy it on your phone:"
+  info ""
+  # Half blocks: two rows per line, so it fits an 80-column console.
+  printf '%s' "$pub" | run_tool qrencode qrencode -t ansiutf8 -m 2 >&2 ||
+    info "(The QR code could not be shown; copy the key below.)"
+  info ""
+  info "$pub"
+  info ""
+}
+
+valid_profile() { [ -n "$1" ] && [[ " $PROFILES " == *" $1 "* ]]; }
+
+# Can the key read the overlay, and which profiles does it have?
+check_private_access() {
+  info "Checking access to $PRIVATE_URL ..."
+  local err
+  if ! err=$(nixx flake metadata --refresh "$PRIVATE_URL" 2>&1 >/dev/null); then
+    info "$err"
+    info "Cannot read $PRIVATE_URL with the key above. Check the URL, and that the key is added to a GitHub account with access."
+    return 1
+  fi
+  if ! PROFILES=$(nixx eval --raw "$PRIVATE_URL#homeModules" --apply 'm: toString (builtins.attrNames m)' 2>&1) || [ -z "$PROFILES" ]; then
+    info "$PROFILES"
+    info "$PRIVATE_URL is not a private overlay: it exports no homeModules (README, \"Private overlay\")."
+    return 1
+  fi
+}
+
+choose_profile() {
+  local default=""
+  if valid_profile "$USERNAME"; then
+    default=$USERNAME
+  elif valid_profile default; then
+    default=default
+  fi
+  if [ "$PROFILE_FLAG" = 1 ]; then
+    valid_profile "$PROFILE" || die "The overlay has no profile '$PROFILE'. Available: $PROFILES"
+    return
+  fi
+  info "Profiles in the overlay: $PROFILES"
+  while ask PROFILE "Profile" "$default" && ! valid_profile "$PROFILE"; do
+    info "Choose one of: $PROFILES"
+  done
+}
+
+# Optional: a private overlay, with a new SSH key for the primary user that is
+# added to GitHub from a phone. Everything happens before the disk is touched.
+collect_private() {
+  heading "Private overlay"
+  local answer
+  if [ "$PRIVATE_FLAG" = 0 ]; then
+    info "A private overlay adds your own setup from a private repository (README, \"Private overlay\")."
+    ask answer "Set up a private overlay? [y/N]"
+    case "$answer" in
+      y | Y | yes | Yes) ;;
+      *) return 0 ;;
+    esac
+    ask PRIVATE_URL "Overlay repository" "$DEFAULT_PRIVATE"
+  fi
+
+  generate_ssh_key
+  configure_live_ssh
+  show_public_key
+  ask answer "Press Enter when the key is added on GitHub"
+  while ! { check_private_access && choose_profile; }; do
+    ask answer "Retry, or skip the overlay? (r/s)" "r"
+    case "$answer" in
+      s | S | skip)
+        PRIVATE_URL="" PROFILE=""
+        info "Continuing without the private overlay. The key is installed anyway; add the overlay later with: nixos-central private setup"
+        return 0
+        ;;
+    esac
+  done
+}
+
 cleanup() {
   if [ -e "$LUKS_KEY" ]; then shred -u "$LUKS_KEY" 2>/dev/null || rm -f "$LUKS_KEY"; fi
+  # After a failed install the key stays (tmpfs) for the next attempt.
+  if [ "$INSTALLED" = 1 ] && [ -e "$SSH_DIR" ]; then
+    shred -u "$SSH_DIR"/* 2>/dev/null || true
+    rm -rf "$SSH_DIR"
+  fi
 }
 
 # ── install ───────────────────────────────────────────────────────────────────
@@ -384,6 +540,12 @@ write_machine_flake() {
     -e "s|@KEYBOARD_LAYOUTS@|$KEYBOARD_LAYOUTS|g" \
     -e "s|@STATE_VERSION@|$RELEASE|g" \
     "$template/flake.nix" >"$WORK/flake.nix"
+  if [ -n "$PRIVATE_URL" ]; then
+    # The same edit as `nixos-central private setup`, so `remove` undoes it.
+    # shellcheck disable=SC1090
+    source "$(nixx eval --raw "$CENTRAL#lib.privateFlakeEdit")"
+    flake_add_overlay "$WORK/flake.nix" nixos "$PRIVATE_URL" "$PROFILE"
+  fi
   nixx flake lock "path:$WORK"
 }
 
@@ -417,7 +579,19 @@ install_system() {
   info "==> $STEP"
   nixos-install --root /mnt --flake "/mnt/etc/nixos#$HOST" --no-root-passwd --no-channel-copy
 
+  if [ "$KEY_GENERATED" = 1 ]; then
+    STEP="installing the SSH key for $USERNAME"
+    info "==> $STEP"
+    local ssh="/mnt/home/$USERNAME/.ssh"
+    install -d -m 0700 "$ssh"
+    install -m 0600 "$SSH_DIR/id_ed25519" "$ssh/id_ed25519"
+    install -m 0644 "$SSH_DIR/id_ed25519.pub" "$ssh/id_ed25519.pub"
+    # The user exists once nixos-enter has run the new system's activation.
+    nixos-enter --root /mnt -c "chown $USERNAME:users /home/$USERNAME && chown -R $USERNAME:users /home/$USERNAME/.ssh"
+  fi
+
   trap - ERR
+  INSTALLED=1
   STEP="done"
 }
 
@@ -429,6 +603,13 @@ finish() {
   info "    desktop   $DESKTOP"
   info "    keyboard  $KEYBOARD_LAYOUT"
   info "    disk      $DISK_ID"
+  if [ -n "$PRIVATE_URL" ]; then
+    info "    overlay   $PRIVATE_URL"
+    info "    profile   $PROFILE"
+  fi
+  if [ "$KEY_GENERATED" = 1 ]; then
+    info "    SSH key   /home/$USERNAME/.ssh/id_ed25519"
+  fi
   info ""
   info "Remove the USB stick when the computer restarts."
   local answer
@@ -452,6 +633,7 @@ main() {
   select_disk
   confirm_wipe
   collect_secrets
+  collect_private
   install_system
   finish
 }

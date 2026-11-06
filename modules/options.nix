@@ -32,6 +32,12 @@ in
       description = "Default keyboard layout of the machine, for the console and the graphical session. One of the names in nixos-central-internal/lib/keyboard-layouts.nix (us, de, sg = Swiss German, sf = Swiss French).";
     };
 
+    profile = lib.mkOption {
+      type = lib.types.nullOr (lib.types.strMatching "[A-Za-z0-9._-]+");
+      default = null;
+      description = "Profile used in place of the primary user's name, in the central repository (users/<profile>) and in the private overlay. The account keeps the user's name. null: the user's name.";
+    };
+
     private.enable = lib.mkEnableOption "the private overlay of the machine flake (set by mkHost)";
 
     repo = lib.mkOption {

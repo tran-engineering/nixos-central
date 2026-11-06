@@ -1,10 +1,12 @@
 # The machine's primary user: account and home-manager profile.
 # The profile is users/<name> if the central repo has one, users/_default otherwise
-# (see nixos-central-internal/lib/profiles.nix).
+# (see nixos-central-internal/lib/profiles.nix). <name> is the recorded profile
+# (nixos-central.profile), else the user's name; the account keeps the user's name.
 { config, inputs, lib, pkgs, ... }:
 let
   inherit (config.nixos-central) user;
-  profile = ((import ../nixos-central-internal/lib/profiles.nix).resolve user).path;
+  profileName = if config.nixos-central.profile == null then user else config.nixos-central.profile;
+  profile = ((import ../nixos-central-internal/lib/profiles.nix).resolve profileName).path;
   # Login shell selected by the profile (modules/home/shell.nix).
   shell = config.home-manager.users.${user}.nixos-central.shell;
 in

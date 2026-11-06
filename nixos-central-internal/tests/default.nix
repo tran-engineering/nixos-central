@@ -801,6 +801,51 @@ in
         '';
       };
 
+    # The flake edits of `nixos-central private` and the installer (flake-edit.sh)
+    # on both templates: the exact lines added, and remove restoring the file.
+    private-flake-edit =
+      pkgs.runCommand "private-flake-edit" { nativeBuildInputs = [ pkgs.diffutils ]; } ''
+        set -euo pipefail
+        die() { echo "die: $*" >&2; exit 1; }
+        source ${../private/flake-edit.sh}
+        render() { sed -e 's|@USER@|alice|' -e 's|@[A-Z_]*@|x|g' "$1" > "$2"; cp "$2" "$2.orig"; }
+        render ${../templates/host/flake.nix} host.nix
+        render ${../templates/home/flake.nix} home.nix
+        added() { diff "$1.orig" "$1" | sed -n 's/^> *//p'; }
+        expect() { [ "$1" = "$2" ] || { printf 'expected:\n%s\ngot:\n%s\n' "$1" "$2"; exit 1; }; }
+
+        # NixOS with a profile: right after the user, removed again with the overlay.
+        flake_add_overlay host.nix nixos 'git+ssh://git@github.com/alice/private?ref=a&b=1' developer
+        expect 'inputs.private.url = "git+ssh://git@github.com/alice/private?ref=a&b=1";
+        { central, private, ... }:
+        profile = "developer"; # in the central repository or the private overlay
+        inherit private;' "$(added host.nix)"
+        grep -q '^        profile = "developer";' host.nix   # indented like user
+        grep -q '^        inherit private;' host.nix
+        flake_remove_overlay host.nix nixos
+        cmp host.nix host.nix.orig
+
+        # NixOS without a profile: no profile line.
+        flake_add_overlay host.nix nixos git+ssh://git@github.com/alice/private
+        ! grep -q 'profile = ' host.nix
+        flake_remove_overlay host.nix nixos
+        cmp host.nix host.nix.orig
+
+        # Standalone home: the template's profile line is rewritten and kept on remove.
+        flake_add_overlay home.nix home git+ssh://git@github.com/alice/private kt
+        grep -q '^ *profile = "kt"; # in the central repository or the private overlay$' home.nix
+        flake_remove_overlay home.nix home
+        grep -q '^ *profile = "kt";' home.nix
+        ! grep -q 'private' home.nix
+
+        # A flake of another shape is refused unchanged.
+        echo '{ }' > other.nix
+        if (flake_add_overlay other.nix nixos u p) 2>err; then exit 1; fi
+        grep -q 'does not have the expected shape' err
+        expect '{ }' "$(cat other.nix)"
+        touch $out
+      '';
+
     # nixos-central private setup changes nothing when the overlay can't be read or
     # the configuration with it can't be activated (offline VM: it can't build).
     # The successful setup is covered by the e2e test.
@@ -857,6 +902,11 @@ in
         with subtest("activation fails: flake and lock restored"):
             out = machine.fail("nixos-central private setup git+file:///tmp/private 2>&1")
             assert "Restored /etc/nixos/flake.nix" in out, out
+            assert state() == before
+
+        with subtest("NixOS accepts --profile; activation fails: flake and lock restored"):
+            out = machine.fail("nixos-central private setup git+file:///tmp/private --profile developer 2>&1")
+            assert "only for standalone homes" not in out and "Restored /etc/nixos/flake.nix" in out, out
             assert state() == before
 
         with subtest("remove without overlay"):

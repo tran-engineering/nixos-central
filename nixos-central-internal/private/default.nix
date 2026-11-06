@@ -7,5 +7,6 @@ writeShellApplication {
     GITHUB_HOST_KEY=${builtins.toJSON (import ../lib/github-host-key.nix)}
     DEFAULT_URL=${builtins.toJSON (import ../lib/default-private.nix)}
   ''
+  + builtins.readFile ./flake-edit.sh
   + builtins.readFile ./nixos-central-private.sh;
 }

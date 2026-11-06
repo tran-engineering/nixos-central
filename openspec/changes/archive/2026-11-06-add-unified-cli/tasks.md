@@ -33,7 +33,7 @@
 - [x] 5.1 README: replace every remaining `nixos-central-*` user command with the subcommand form ("Updates", "Trying a branch", "Install on another Linux distribution", the command overview block around line 104), and add a short "The nixos-central command" section (menu, help, completion). Verify that `grep -n 'nixos-central-\(upgrade\|try\|diff\|private\|update-notice\)' README.md` returns nothing
 - [x] 5.2 `nixos-central-internal/tests/e2e/run.py`: switch the `try`, `upgrade` and `private` steps to `nixos-central try|upgrade|private`. Verify with `nix run --impure -f nixos-central-internal/tests/e2e` (needs KVM and network)
 - [x] 5.3 `nix flake check -L` passes and `openspec validate add-unified-cli --strict` passes
-- [ ] 5.4 On a real NixOS machine (`--override-input central path:<checkout>`): `nixos-central` in a terminal shows the menu without `try`, picking `diff` shows the diff, Escape changes nothing, and Tab completion works in the login shell. On a standalone home: the same, plus `nixos-central status`
+- [x] 5.4 On a real NixOS machine (`--override-input central path:<checkout>`): `nixos-central` in a terminal shows the menu without `try`, picking `diff` shows the diff, Escape changes nothing, and Tab completion works in the login shell. On a standalone home: the same, plus `nixos-central status`
 
 ## Workflow follow-up
 
