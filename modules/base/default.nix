@@ -4,6 +4,7 @@
   imports = [
     ./auto-upgrade.nix
     ./command.nix
+    ./docker.nix
     ./gc.nix
     ./reboot-notify.nix
     ./try.nix
