@@ -4,20 +4,8 @@
 { pkgs, ... }:
 {
   home.packages = with pkgs; [
-    # Downloads and media
-    aria2 # better wget
-    yt-dlp
-    ffmpeg
-    imagemagick
-
-    # Files and archives
-    p7zip
-    bat # better cat
-    eza # better ls
-    mc # midnight commander
+    # Files
     rsync
-    exiftool
-    poppler-utils # pdfinfo, pdffonts
 
     # Disk usage
     dust # better du
@@ -27,8 +15,5 @@
     whois
     iftop # network traffic monitor
     dnsutils # nslookup and others
-
-    # Misc
-    qrencode
   ];
 }

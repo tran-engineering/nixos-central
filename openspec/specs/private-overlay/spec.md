@@ -84,7 +84,7 @@ If a machine with an overlay can't fetch it, every upgrade MUST fail without cha
 An overlay's modules SHALL be able to include any shared home module of the central repository by its name, without a path into the central repository. The set of names is an interface of the central repository; renaming or removing a name MUST be announced as breaking.
 
 #### Scenario: Overlay uses shared modules
-- **WHEN** an overlay's home module includes the shared `fish` and `dev-cli` modules by name
+- **WHEN** an overlay's home module includes the shared `zsh` and `git` modules by name
 - **THEN** after setup, the user has the tools and settings of both modules
 
 #### Scenario: New shared module

@@ -6,7 +6,7 @@
     homeModules.default =
       { centralModules, ... }:
       {
-        imports = [ centralModules.fish ];
+        imports = [ centralModules.zsh ];
         home.file.".nixos-central-overlay-test".text = "from the overlay\n";
       };
     homeModules.ci-overlay = {

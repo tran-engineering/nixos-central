@@ -164,17 +164,8 @@
             };
             # The names overlays rely on; changing them breaks overlays (announce it).
             expectedModules = [
-              "dev-cli"
-              "dev-desktop"
-              "drawio"
-              "fish"
-              "foot"
               "general-tools"
-              "ghostty"
               "git"
-              "godot"
-              "idea"
-              "jj"
               "zsh"
             ];
             actualModules = builtins.attrNames centralLib.centralModules;
@@ -192,7 +183,7 @@
               in
               assert overlayHost.config.environment.etc."nixos-central-overlay-test".text == "from the overlay\n";
               assert hm.home.file.".nixos-central-overlay-test".text == "from the overlay\n";
-              assert hm.programs.fish.enable;
+              assert hm.programs.zsh.enable;
               evalOnly "overlay-eval" overlayHost.config.system.build.toplevel;
 
             # The overlay profile is chosen by user (NixOS) or profile fact

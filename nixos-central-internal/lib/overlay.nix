@@ -16,7 +16,7 @@ let
   entries = lib.filterAttrs (name: _: !(builtins.elem name internal)) (builtins.readDir homeDir);
 in
 {
-  # Shared home modules by name (dev-cli, fish, ...), passed to every profile
+  # Shared home modules by name (git, zsh, ...), passed to every profile
   # and overlay as the special argument `centralModules`. The names are an
   # interface: renaming or removing one breaks overlays.
   centralModules = lib.mapAttrs' (

@@ -12,7 +12,7 @@
       "zsh"
     ];
     default = "bash";
-    description = "Login shell of the user. The shared fish and zsh modules configure the shells further.";
+    description = "Login shell of the user. The shared zsh module configures zsh further.";
   };
 
   # The selected shell works even without its shared module.

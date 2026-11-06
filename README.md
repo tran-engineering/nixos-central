@@ -302,24 +302,9 @@ and on other distributions alike:
 
 | Module | Provides |
 |---|---|
-| `general-tools.nix` | everyday CLI utilities: `bat`, `eza`, `dust`, `ncdu`, `7z`, `yt-dlp`, `ffmpeg`, `imagemagick`, `exiftool`, `nslookup`, … |
-| `dev-cli` | development tooling: `rg`, `just`, `jq`, `gh`, `lazygit`, `rustup`, `uv`, `claude`, `opencode`, Kubernetes/Terraform/AWS CLIs, Nix tooling; cargo and pnpm binaries on the `PATH`, Node.js via mise |
+| `general-tools.nix` | everyday CLI utilities: `rsync`, `dust`, `ncdu`, `whois`, `iftop`, `nslookup`/`dig` |
 | `git.nix` | git with Git LFS; rebase on pull, push sets the upstream |
-| `jj.nix` | jj and `jjui`; bookmarks track `origin`, commits described `wip:`/`private:` are not pushed |
-| `dev-desktop.nix` | the Zed editor (`zed`) with its Claude agent |
-| `idea.nix` | IntelliJ IDEA |
-| `godot.nix` | Godot |
-| `drawio.nix` | draw.io |
-| `fish` | fish with the tide prompt, `fzf` search, `z`, `cd-gitroot` |
 | `zsh.nix` | zsh with completion, autosuggestions, syntax highlighting, shared history |
-| `foot.nix` | the foot terminal |
-| `ghostty.nix` | the Ghostty terminal |
-
-The fish prompt and the terminals come with an icon font, so the prompt's
-icons render whatever main font you choose. To use your own tide prompt, run
-`tide configure`, save the result as described in
-`modules/home/fish/tide.fish`, and point
-`xdg.configFile."fish/conf.d/tide.fish".source` at it.
 
 Pick modules by name with `centralModules`, which every profile and private
 overlay receives:
@@ -328,17 +313,16 @@ overlay receives:
 # homeModules.default of your private overlay
 { centralModules, ... }:
 {
-  imports = with centralModules; [ dev-cli git godot ];
+  imports = with centralModules; [ general-tools git zsh ];
 }
 ```
 
 Profiles inside this repository can do the same, or import by path
-(`../../modules/home/dev-cli`). The module names are an interface for overlays:
+(`../../modules/home/git.nix`). The module names are an interface for overlays:
 renaming or removing one is a breaking change.
 
 The modules set no names or emails; put those in your overlay. Their workflow
-defaults (git, jj, and Node.js 24 in `dev-cli`) are overridden by setting the
-same option:
+defaults (e.g. git's) are overridden by setting the same option:
 
 ```nix
 programs.git.settings.pull.rebase = false;
@@ -355,8 +339,8 @@ nixos-central.shell = "fish";   # "bash" (default), "fish" or "zsh"
 
 NixOS machines switch to it with their next update (log in again). On another
 Linux distribution, changing the login shell needs root, so the home installer
-prints the `chsh` command instead. Selecting a shell installs it; import the
-`fish` or `zsh` module as well for the configuration above.
+prints the `chsh` command instead. Selecting a shell installs it; for zsh,
+import the `zsh` module as well for the configuration above.
 
 Profiles named `ci-*` (e.g. `users/ci-user`) exist only for tests and are not
 offered by the home installer.
@@ -378,8 +362,8 @@ it can hold several people's profiles:
 {
   outputs = _: {
     homeModules.alice = { centralModules, pkgs, ... }: {
-      imports = with centralModules; [ dev-cli git fish ghostty ];
-      nixos-central.shell = "fish";
+      imports = with centralModules; [ general-tools git zsh ];
+      nixos-central.shell = "zsh";
       programs.git.settings.user = { name = "Alice"; email = "alice@example.com"; };
       home.file.".ssh/config".source = ./alice/ssh/config;
     };

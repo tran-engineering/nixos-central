@@ -8,6 +8,6 @@
   nixos-central.shell = "fish";
   programs.plasma = {
     enable = true;
-    configFile.kdeglobals.General.TerminalApplication = "foot";
+    configFile.kdeglobals.General.TerminalApplication = "konsole";
   };
 }
