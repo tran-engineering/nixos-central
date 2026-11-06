@@ -237,6 +237,19 @@ in
       '';
     };
 
+    # The docker daemon runs and the primary user reaches it without sudo.
+    docker = runTest {
+      name = "nixos-central-docker";
+      nodes.machine = {
+        imports = [ (testHost { desktop = "none"; }) ];
+      };
+      testScript = ''
+        machine.wait_for_unit("multi-user.target")
+        machine.wait_for_unit("docker.service")
+        machine.succeed("su - alice -c 'docker info'")
+      '';
+    };
+
     # The nixos-central command with stub subcommands: help, dispatch, errors,
     # menu entries, and the generated completions (syntax; bash and fish run).
     # The menu itself (gum) needs a terminal and is checked by hand.
