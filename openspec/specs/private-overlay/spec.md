@@ -11,14 +11,14 @@ A private overlay SHALL be a flake that exports home-manager modules, one per pr
 
 #### Scenario: Overlay adds private files
 - **WHEN** the overlay's profile for the user places `~/.ssh/config` and scripts in `~/.local/bin`
-- **THEN** after setup, the user has these files in addition to everything from their central profile
+- **THEN** after setup, the user has these files in addition to everything from the central base configuration
 
 #### Scenario: Overlay declares inputs
 - **WHEN** an overlay flake declares an input
 - **THEN** building with it fails with a message that overlays must not have inputs
 
-### Requirement: Overlay profile is chosen like a central profile
-The overlay profile SHALL be chosen by the same name as the central profile: on a NixOS machine the profile recorded in its machine flake, or the primary user's name if none is recorded; on a standalone home the profile recorded in its local flake, or the login name if none is recorded. If the overlay has no profile of that name, its default profile SHALL be used. If it has neither, the build MUST fail with a message listing the overlay's profiles.
+### Requirement: Overlay profile is chosen by the recorded profile or the user's name
+The overlay profile SHALL be chosen by name: on a NixOS machine the profile recorded in its machine flake, or the primary user's name if none is recorded; on a standalone home the profile recorded in its local flake, or the login name if none is recorded. If the overlay has no profile of that name, its default profile SHALL be used; if that name was recorded, the build MUST warn about it. If the overlay has neither, the build MUST fail with a message listing the overlay's profiles.
 
 #### Scenario: Several users in one overlay
 - **WHEN** the overlay has profiles `kt` and `ft`, and machine `foo` has primary user `ft` and no recorded profile
@@ -30,7 +30,7 @@ The overlay profile SHALL be chosen by the same name as the central profile: on 
 
 #### Scenario: Fallback to the overlay's default
 - **WHEN** the overlay has a default profile but none of the chosen name
-- **THEN** the user gets the overlay's default profile
+- **THEN** the user gets the overlay's default profile, with a warning only if the name was recorded
 
 #### Scenario: No matching profile
 - **WHEN** the overlay has neither a profile of the chosen name nor a default profile
@@ -52,12 +52,12 @@ The system SHALL provide a subcommand `nixos-central private setup [<flake-url>]
 - **THEN** the overlay is added to `~/.config/home-manager` and the home is switched
 
 #### Scenario: Standalone home with an overlay-only profile
-- **WHEN** a user of a standalone home runs the setup command with `--profile kt`, and `kt` exists only in the overlay
-- **THEN** the local flake records profile `kt`, the user gets the central default profile plus the overlay's `kt` profile, and no "profile does not exist" warning is shown
+- **WHEN** a user of a standalone home installed without a profile runs the setup command with `--profile kt`, and the overlay has a `kt` profile
+- **THEN** the local flake records profile `kt`, the user gets the central base configuration plus the overlay's `kt` profile, and no warning is shown
 
 #### Scenario: NixOS machine with an overlay-only profile
-- **WHEN** primary user `alice` of a NixOS machine runs `nixos-central private setup git+ssh://git@github.com/alice/private --profile developer`, and `developer` exists only in the overlay
-- **THEN** `/etc/nixos/flake.nix` declares the overlay and records profile `developer`, and after activation `alice` has the central default profile plus the overlay's `developer` profile
+- **WHEN** primary user `alice` of a NixOS machine runs `nixos-central private setup git+ssh://git@github.com/alice/private --profile developer`, and the overlay has a `developer` profile
+- **THEN** `/etc/nixos/flake.nix` declares the overlay and records profile `developer`, and after activation `alice` has the central base configuration plus the overlay's `developer` profile
 
 #### Scenario: Default overlay
 - **WHEN** a user runs `nixos-central private setup` without a flake URL
@@ -68,7 +68,7 @@ The system SHALL provide a subcommand `nixos-central private setup [<flake-url>]
 - **THEN** the default overlay is set up with profile `kt`
 
 ### Requirement: Overlay can be removed
-`nixos-central private remove` SHALL remove the overlay from the local flake and activate the configuration without it. On a NixOS machine it SHALL also remove a recorded profile, so the primary user's name selects the profile again.
+`nixos-central private remove` SHALL remove the overlay and a recorded profile from the local flake, on NixOS machines and standalone homes alike, and activate the configuration without them.
 
 #### Scenario: Remove
 - **WHEN** a user runs `nixos-central private remove`
@@ -76,7 +76,11 @@ The system SHALL provide a subcommand `nixos-central private setup [<flake-url>]
 
 #### Scenario: Remove on NixOS with a recorded profile
 - **WHEN** a NixOS machine with primary user `alice` declares an overlay and records profile `developer`, and `alice` runs `nixos-central private remove`
-- **THEN** `/etc/nixos/flake.nix` declares neither the overlay nor a profile, and the machine builds with `alice`'s central profile or the shared default profile
+- **THEN** `/etc/nixos/flake.nix` declares neither the overlay nor a profile, and the machine builds with the base configuration, without a warning
+
+#### Scenario: Remove on a standalone home with a recorded profile
+- **WHEN** a standalone home declares an overlay and records profile `kt`, and its user runs `nixos-central private remove`
+- **THEN** `~/.config/home-manager/flake.nix` declares neither the overlay nor a profile, and the home builds with the base configuration, without a warning
 
 ### Requirement: Unattended upgrades can fetch the overlay
 On NixOS machines, the automatic upgrade SHALL fetch the overlay with the primary user's SSH key without user interaction. GitHub's host keys SHALL be known in advance, so no host-key prompt can block a fetch.

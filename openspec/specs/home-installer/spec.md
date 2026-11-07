@@ -61,30 +61,11 @@ If Nix is not available, the home installer SHALL explain that a multi-user Nix 
 - **WHEN** Nix is not installed and the user declines
 - **THEN** the home installer aborts and nothing is changed
 
-### Requirement: Profile is selected from the central repository
-The home installer SHALL accept `--profile <name>` and otherwise prompt with the list of selectable profiles of the central repository. The default SHALL be the profile named like the login name if it exists, else the shared default profile. Test profiles MUST NOT be offered. An unknown profile MUST be rejected (re-prompt interactively, abort for the flag).
-
-#### Scenario: Matching personal profile
-- **WHEN** user `kt` runs the home installer and the repository has a profile `kt`
-- **THEN** the prompt offers `kt` as the default
-
-#### Scenario: Pick another profile
-- **WHEN** user `khoi.tran` runs the home installer and selects profile `kt`
-- **THEN** `khoi.tran`'s home is built from profile `kt`
-
-#### Scenario: No matching profile
-- **WHEN** user `bob` runs the home installer and the repository has no `bob` profile
-- **THEN** the prompt offers the shared default profile as the default
-
-#### Scenario: Unknown profile flag
-- **WHEN** the home installer is run with `--profile no-such-profile`
-- **THEN** it aborts with a message listing the selectable profiles, before writing any file
-
 ### Requirement: Home installer accepts optional flags
 The home installer SHALL accept its options via `sh -s -- <flags>`. A value given as a flag MUST NOT be prompted for. Unknown flags MUST abort with a usage message before any file is written.
 
 #### Scenario: Non-interactive install
-- **WHEN** the home installer is run with `--profile kt` and the GPU setup and Nix install are answered via flags
+- **WHEN** the home installer is run with the GPU setup and Nix install answered via flags
 - **THEN** it completes without prompting
 
 #### Scenario: Unknown flag
@@ -110,16 +91,27 @@ When the first activation would replace a file in the home directory that is not
 - **THEN** the original is kept as `~/.bashrc.backup` and the profile's version is active
 
 ### Requirement: Home installer produces a centrally managed home
-The home installer SHALL write the local flake (see `home-configuration`), activate it with the home-manager version pinned by the central repository, offer the one-time GPU setup, and print a summary: login name, profile (personal or default), automatic updates, and how to update manually. It MUST NOT change the user's login shell; if the profile selects a different shell than the current login shell, it SHALL print how to change it.
+The home installer SHALL write the local flake (see `home-configuration`), activate it with the home-manager version pinned by the central repository, offer the one-time GPU setup, and print a summary: login name, automatic updates, how to update manually, and how to add a private overlay with a profile. It MUST NOT change the user's login shell; if the activated configuration selects a different shell than the current login shell, it SHALL print how to change it.
 
 #### Scenario: Successful install
 - **WHEN** the home installer completes
-- **THEN** the profile's programs are available in a new login session, the daily upgrade is scheduled, and the summary is printed
+- **THEN** the base configuration's programs are available in a new login session, the daily upgrade is scheduled, and the summary is printed, including the `nixos-central private setup` command
 
 #### Scenario: Profile uses fish
-- **WHEN** the chosen profile selects fish and the login shell is bash
+- **WHEN** the activated configuration selects fish and the login shell is bash
 - **THEN** the login shell stays bash and the summary explains how to switch to fish
 
 #### Scenario: Profile provides a shell it does not select
-- **WHEN** the chosen profile includes the `zsh` module but selects bash, and the login shell is bash
+- **WHEN** the activated configuration includes the `zsh` module but selects bash, and the login shell is bash
 - **THEN** the summary does not suggest switching shells
+
+### Requirement: Home installer does not select a profile
+The home installer SHALL NOT ask for a profile and SHALL NOT record one in the local flake. Given `--profile`, it MUST abort before writing any file, with a message that profiles come from a private overlay and are chosen with `nixos-central private setup --profile <name>` after installation.
+
+#### Scenario: Interactive install
+- **WHEN** user `kt` runs the home installer without flags
+- **THEN** it does not ask for a profile, and the home is built from the base configuration
+
+#### Scenario: Profile flag from an old instruction
+- **WHEN** the home installer is run with `--profile kt`
+- **THEN** it aborts before writing any file, and the message names `nixos-central private setup --profile kt`

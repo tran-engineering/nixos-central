@@ -13,51 +13,37 @@ Each machine SHALL have one primary user, named by the machine flake, as a norma
 - **WHEN** the primary user logs in after installation
 - **THEN** login succeeds with the install-time password and `sudo` works for that user
 
-### Requirement: Personal profile overrides the default
-If the central repository contains a profile for the primary user's name, the machine SHALL use it in place of the shared default profile. A personal profile MAY reuse the default profile explicitly; it MUST NOT be merged with the default implicitly.
-
-#### Scenario: Personal profile exists
-- **WHEN** the central repository contains a profile for `bob` and machine `foo` has primary user `bob`
-- **THEN** `bob`'s environment on `foo` is built from `bob`'s profile
-
-#### Scenario: Personal profile reuses the default
-- **WHEN** `bob`'s profile explicitly includes the default profile and overrides one setting
-- **THEN** `bob` gets everything from the default except the overridden setting
-
-### Requirement: Fallback to the shared default profile
-If no profile for the primary user's name exists in the central repository, the machine SHALL use the shared default profile.
-
-#### Scenario: New user without profile
-- **WHEN** a machine is installed with user `alice` and the repository has no `alice` profile
-- **THEN** the system installs successfully and `alice` gets the default profile
-
 ### Requirement: Profiles are resolved at build time
-The choice between personal and default profile SHALL be made each time the system is built, so adding a personal profile to the repository takes effect on the next update without changing the machine.
+The profile SHALL be chosen each time the system or home is built, so a profile added to the private overlay later takes effect on the next update without changing the machine or home.
 
 #### Scenario: Profile added later
-- **WHEN** `alice`'s profile is merged into the central repository after her machine was installed
-- **THEN** her machine uses `alice`'s profile after its next update, with no edit to `/etc/nixos`
+- **WHEN** `alice`'s profile is added to her private overlay after her machine was installed with the overlay's default profile
+- **THEN** her machine uses the overlay's `alice` profile after its next update that includes the overlay, with no edit to `/etc/nixos`
 
-### Requirement: Customization happens in the central repository
-Persistent customization of a user's environment SHALL be done by changing the user's profile in the central repository, or in the user's private overlay (see `private-overlay`). Apart from declaring that one overlay, neither the machine-local flake nor the local flake of a standalone home MUST provide a user-level customization layer.
+### Requirement: Customization happens in the private overlay
+Persistent customization of a user's environment SHALL be done in the user's private overlay (see `private-overlay`). Changes in the central repository (base configuration, shared modules) affect every user. Apart from declaring that one overlay and its profile, neither the machine-local flake nor the local flake of a standalone home MUST provide a user-level customization layer.
 
 #### Scenario: User wants a permanent new package
 - **WHEN** a user wants a package available permanently
-- **THEN** the documented path is a change to their profile in the central repository, which reaches the machine via updates
+- **THEN** the documented path is a change to their profile in their private overlay, which reaches the machine via updates
 
 #### Scenario: Standalone home wants a new package
 - **WHEN** a user of a standalone home wants a package available permanently
-- **THEN** the documented path is a change to their profile in the central repository, not an edit to `~/.config/home-manager`
+- **THEN** the documented path is a change to their profile in their private overlay, not an edit to `~/.config/home-manager`
 
 #### Scenario: Private file
 - **WHEN** a user wants a file on their machines that must not be public, such as a work SSH configuration
 - **THEN** the documented path is their private overlay
 
+#### Scenario: Change for every user
+- **WHEN** a package should be available to every user of every machine
+- **THEN** the documented path is a change to the base configuration in the central repository
+
 ### Requirement: Profiles can use packages from nixpkgs-unstable
-User profiles and NixOS modules in the central repository SHALL be able to refer to packages of the locked nixpkgs-unstable input as `pkgs.unstable.<name>`, with the same package configuration (e.g. unfree allowed) as the stable packages. Packages that are not referred to this way MUST come from the stable nixpkgs.
+Overlay profiles, the base configuration, shared modules and NixOS modules in the central repository SHALL be able to refer to packages of the locked nixpkgs-unstable input as `pkgs.unstable.<name>`, with the same package configuration (e.g. unfree allowed) as the stable packages. Packages that are not referred to this way MUST come from the stable nixpkgs.
 
 #### Scenario: Newer package in a profile
-- **WHEN** `alice`'s profile adds `pkgs.unstable.helix` to her packages
+- **WHEN** `alice`'s overlay profile adds `pkgs.unstable.helix` to her packages
 - **THEN** after the next update `alice` has `helix` at the version of the locked nixpkgs-unstable revision
 
 #### Scenario: Unfree package from unstable
@@ -69,37 +55,38 @@ User profiles and NixOS modules in the central repository SHALL be able to refer
 - **THEN** `hello` comes from the system's stable nixpkgs, not from unstable
 
 ### Requirement: Profiles work on NixOS and standalone
-Every profile in the central repository, including the shared default profile, SHALL build both as the primary user's environment on a NixOS machine and as a standalone home on another Linux distribution. A profile MUST NOT depend on options that exist only on NixOS without guarding them.
+The base configuration and the central repository's test profiles SHALL build both as the primary user's environment on a NixOS machine and as a standalone home on another Linux distribution. Neither the base configuration nor a shared module MUST depend on options that exist only on NixOS without guarding them.
 
 #### Scenario: Same profile on both
-- **WHEN** profile `kt` is used by NixOS machine `foo` and by a standalone home on Ubuntu
-- **THEN** both build, and both contain the programs and settings from `kt`
+- **WHEN** the base configuration is used by NixOS machine `foo` and by a standalone home on Ubuntu, both without an overlay
+- **THEN** both build, and both contain the programs and settings of the base configuration
 
 #### Scenario: Default profile standalone
-- **WHEN** a standalone home uses the shared default profile
-- **THEN** it builds and activates
+- **WHEN** a standalone home has no overlay
+- **THEN** it builds and activates with the base configuration
 
 ### Requirement: Standalone homes choose their profile
-A standalone home SHALL use the profile recorded in its local flake, independent of the login name. If no profile is recorded, the profile named like the login name SHALL be used, and the shared default profile if none exists. The same name selects the profile of the home's private overlay (see `private-overlay`). The choice is resolved each time the home is built.
+A standalone home SHALL use the overlay profile named by the profile recorded in its local flake, or by the login name if none is recorded (see `private-overlay`). The choice is resolved each time the home is built. Without an overlay, a recorded profile SHALL have no effect; the build MUST warn about it, except for the value `_default` written by earlier home installers.
 
 #### Scenario: Profile differs from login name
-- **WHEN** the standalone home of `khoi.tran` records profile `kt`
-- **THEN** `khoi.tran`'s environment is built from `kt`
+- **WHEN** the standalone home of `khoi.tran` declares an overlay and records profile `kt`
+- **THEN** `khoi.tran`'s environment is built from the base configuration plus the overlay's `kt` profile
 
 #### Scenario: Recorded profile removed later
-- **WHEN** the profile recorded in a standalone home is removed from the central repository
-- **THEN** the home's next build uses the shared default profile and warns that the recorded profile no longer exists
+- **WHEN** the profile recorded in a standalone home is removed from its overlay, and the overlay has a default profile
+- **THEN** the home's next build uses the base configuration plus the overlay's default profile and warns that the recorded profile no longer exists in the overlay
 
 #### Scenario: Profile exists only in the private overlay
-- **WHEN** a standalone home records profile `kt`, the central repository has no `kt` profile, and the home's private overlay has one
-- **THEN** the home is built from the shared default profile plus the overlay's `kt` profile, without a warning
+- **WHEN** a standalone home records profile `kt` and the home's private overlay has a `kt` profile
+- **THEN** the home is built from the base configuration plus the overlay's `kt` profile, without a warning
 
-### Requirement: Selectable profile list
-The central repository SHALL expose the names of the profiles a user can select: every personal profile plus the shared default profile, excluding profiles that exist only for testing.
+#### Scenario: Recorded profile without overlay
+- **WHEN** a standalone home records profile `kt` and declares no overlay
+- **THEN** the home builds with the base configuration and warns that the recorded profile has no effect without an overlay
 
-#### Scenario: Test profile hidden
-- **WHEN** the repository contains `users/_default`, `users/kt` and the CI test profile
-- **THEN** the selectable profiles are the default profile and `kt`
+#### Scenario: Home from an earlier installer
+- **WHEN** a standalone home records profile `_default` and declares no overlay
+- **THEN** the home builds with the base configuration without a warning
 
 ### Requirement: Profile selects the login shell
 A profile SHALL be able to select the user's login shell among bash, fish and zsh; bash is the default. The selected shell MUST be usable without further configuration in the profile. On a NixOS machine, the primary user's login shell SHALL be the selected shell.
@@ -143,16 +130,42 @@ A profile or overlay SHALL be able to install `pkgs.unstable.logseq` without add
 - **THEN** evaluation fails as it does without the exception
 
 ### Requirement: NixOS machines can record a profile
-A NixOS machine flake SHALL be able to record a profile name. If one is recorded, it SHALL be used in place of the primary user's name to choose the central profile and the overlay profile, with the same fallback to the shared default profile. Without a recorded profile, the primary user's name SHALL be used as before. The account name MUST stay the primary user's name either way.
+A NixOS machine flake SHALL be able to record a profile name. If one is recorded, it SHALL be used in place of the primary user's name to choose the overlay profile. Without a recorded profile, the primary user's name SHALL be used. Without an overlay, a recorded profile SHALL have no effect and the build MUST warn about it. The account name MUST stay the primary user's name either way.
 
 #### Scenario: Profile that exists only in the overlay
-- **WHEN** machine `foo` has primary user `alice`, records profile `developer`, the central repository has no profile `developer`, and the overlay has one
-- **THEN** `alice`'s environment is built from the shared default profile plus the overlay's `developer` profile, and her login name and home directory stay `alice`
+- **WHEN** machine `foo` has primary user `alice`, records profile `developer`, and the overlay has a profile `developer`
+- **THEN** `alice`'s environment is built from the base configuration plus the overlay's `developer` profile, and her login name and home directory stay `alice`
 
 #### Scenario: Recorded profile exists in the central repository
-- **WHEN** machine `foo` records profile `kt` and the central repository has a profile `kt`
-- **THEN** the primary user's environment is built from the central `kt` profile
+- **WHEN** machine `foo` records profile `ci-user`, the name of one of the central repository's test profiles, and declares an overlay that has a default profile but no `ci-user` profile
+- **THEN** the primary user gets the base configuration plus the overlay's default profile, the central test profile is not used, and the build warns that the overlay has no profile `ci-user`
+
+#### Scenario: Recorded profile without overlay
+- **WHEN** machine `foo` records profile `kt` and declares no overlay
+- **THEN** the primary user gets the base configuration and the build warns that the recorded profile has no effect without an overlay
 
 #### Scenario: No recorded profile
-- **WHEN** a machine flake records no profile
-- **THEN** the profile is chosen by the primary user's name exactly as before
+- **WHEN** a machine flake declares an overlay and records no profile
+- **THEN** the overlay profile is chosen by the primary user's name
+
+### Requirement: Base configuration for every user
+The central repository SHALL provide one base home configuration that every primary user of a NixOS machine and every standalone home gets, with or without a private overlay. The base configuration is not a selectable profile. Its settings SHALL be defaults that a profile can override by setting the same option, without forcing.
+
+#### Scenario: New user without overlay
+- **WHEN** a machine is installed with user `alice` and no private overlay
+- **THEN** the system installs successfully and `alice` gets the base configuration
+
+#### Scenario: Overlay profile on top of the base
+- **WHEN** `alice`'s machine declares an overlay whose `alice` profile adds a package
+- **THEN** `alice` gets the base configuration plus the overlay profile's package
+
+#### Scenario: Overlay overrides a base setting
+- **WHEN** an overlay profile sets `EDITOR` to `nano` without forcing it, and the base configuration sets it to `vim`
+- **THEN** the build succeeds and `alice`'s `EDITOR` is `nano`
+
+### Requirement: Central repository holds no personal profiles
+The central repository MUST NOT contain personal profiles. Profiles SHALL exist only in private overlays (see `private-overlay`). Profiles that exist only to test the central repository SHALL be kept with its tests and MUST NOT be selectable by machines or standalone homes.
+
+#### Scenario: Recorded profile names a test profile
+- **WHEN** a machine without an overlay records profile `ci-user`
+- **THEN** the user gets the base configuration only, and the build warns that the recorded profile has no effect without an overlay
