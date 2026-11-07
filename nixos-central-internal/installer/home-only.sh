@@ -5,7 +5,10 @@
 # it asks about first.
 #
 #   curl -sL https://tran-engineering.github.io/nixos-central/home-only.sh | sh
-#   curl -sL https://tran-engineering.github.io/nixos-central/home-only.sh | sh -s -- --profile kt
+#   curl -sL https://tran-engineering.github.io/nixos-central/home-only.sh | sh -s -- --no-gpu-setup
+#
+# Profiles come from a private overlay, added afterwards with
+#   nixos-central private setup [<flake-url>] [--profile NAME]
 #
 # Everything below is a function definition; main runs on the very last line,
 # so a truncated download does nothing.
@@ -24,8 +27,8 @@ init_globals() {
   NIX_DAEMON_PROFILE=/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
   NVIDIA_VERSION_FILE=/proc/driver/nvidia/version
 
-  PROFILE="" PROFILE_FLAG=0 INSTALL_NIX="" REPLACE_EXISTING="" GPU_SETUP=""
-  USERNAME="" SYSTEM="" RELEASE="" PROFILES="" NVIDIA=null HM_BACKUP=""
+  INSTALL_NIX="" REPLACE_EXISTING="" GPU_SETUP=""
+  USERNAME="" SYSTEM="" RELEASE="" NVIDIA=null HM_BACKUP=""
 }
 
 # ── output ────────────────────────────────────────────────────────────────────
@@ -43,9 +46,10 @@ Usage: curl -sL https://tran-engineering.github.io/nixos-central/home-only.sh | 
 
 Sets up your user environment from nixos-central on this Linux machine (no NixOS
 needed). Run it as yourself, not as root. Missing answers are asked for.
+Your own profile comes from a private overlay; add it afterwards with
+  nixos-central private setup [<flake-url>] [--profile NAME]
 
 Options:
-  --profile NAME       profile from the central repository (default: yours, else _default)
   --install-nix        install Nix if it is missing (needs sudo), without asking
   --replace-existing   move an existing ~/.config/home-manager aside, without asking
   --gpu-setup          set up GPU drivers for Nix programs (needs sudo once), without asking
@@ -75,17 +79,12 @@ parse_flags() {
         value=${flag#*=}
         flag=${flag%%=*}
         ;;
-      --profile)
-        [ $# -ge 2 ] || {
-          usage
-          die "$flag needs a value."
-        }
-        value=$2
-        shift
-        ;;
+      --profile) value=${2:-NAME} ;; # no longer supported; explained below
     esac
     case "$flag" in
-      --profile) PROFILE=$value PROFILE_FLAG=1 ;;
+      --profile)
+        die "--profile is no longer supported: profiles come from a private overlay, not from the central repository. Install without --profile, then run: nixos-central private setup [<flake-url>] --profile $value"
+        ;;
       --install-nix) INSTALL_NIX=yes ;;
       --replace-existing) REPLACE_EXISTING=yes ;;
       --gpu-setup) GPU_SETUP=yes ;;
@@ -133,7 +132,6 @@ confirm() {
   esac
 }
 
-valid_profile() { [[ " $PROFILES " == *" $1 "* ]]; }
 
 # ── checks ────────────────────────────────────────────────────────────────────
 
@@ -209,32 +207,12 @@ ensure_nix() {
   command -v nix >/dev/null || die "Nix was installed but is not available; open a new terminal and run this installer again."
 }
 
-# ── profile ───────────────────────────────────────────────────────────────────
+# ── central ───────────────────────────────────────────────────────────────────
 
 load_central() {
   info "Fetching nixos-central ($CENTRAL) ..."
-  local facts
-  facts=$(nixx eval --raw "$CENTRAL#lib" --apply 'l: l.release + " " + toString l.profileNames') ||
+  RELEASE=$(nixx eval --raw "$CENTRAL#lib.release") ||
     die "Could not load $CENTRAL."
-  RELEASE=${facts%% *}
-  PROFILES=${facts#* }
-}
-
-choose_profile() {
-  heading "Profile"
-  local default=_default
-  valid_profile "$USERNAME" && default=$USERNAME
-  if [ "$PROFILE_FLAG" = 1 ]; then
-    valid_profile "$PROFILE" || die "Unknown profile '$PROFILE'. Available: $PROFILES"
-  else
-    info "Profiles in the central repository: $PROFILES"
-    while true; do
-      ask PROFILE "Profile for $USERNAME" "$default"
-      valid_profile "$PROFILE" && break
-      info "Unknown profile '$PROFILE'. Choose one of: $PROFILES"
-    done
-  fi
-  info "Using profile $PROFILE"
 }
 
 # ── gpu ───────────────────────────────────────────────────────────────────────
@@ -285,8 +263,6 @@ write_home_flake() {
     -e "s|@USER@|$USERNAME|g" \
     -e "s|@HOME@|$HOME|g" \
     -e "s|@SYSTEM@|$SYSTEM|g" \
-    -e "s|@PROFILE@|$PROFILE|g" \
-    -e "s|@PROFILES@|$PROFILES|g" \
     -e "s|@STATE_VERSION@|$RELEASE|g" \
     -e "s|@NVIDIA@|$(sed_escape "$NVIDIA")|g" \
     "$template/flake.nix" >"$HM_DIR/flake.nix"
@@ -337,20 +313,18 @@ shell_hint() {
 }
 
 finish() {
-  local kind="personal profile"
-  [ "$PROFILE" = _default ] && kind="shared default profile"
   heading "Done"
   info "    user      $USERNAME ($HOME)"
-  info "    profile   $PROFILE ($kind)"
-  info "    config    $HM_DIR"
+  info "    config    $HM_DIR (base configuration from nixos-central)"
   info "    updates   daily, automatically (systemctl --user list-timers home-manager-auto-upgrade.timer)"
   info ""
   info "Update now:   nix flake update central --flake $HM_DIR && home-manager switch --flake $HM_DIR"
   info "Roll back:    home-manager generations, then run <generation>/activate"
-  info "Changes to your environment belong in the profile in the central repository."
+  info "Your own profile: add your private overlay with"
+  info "    nixos-central private setup [<flake-url>] [--profile NAME]"
   shell_hint
   info ""
-  info "Log out and back in to use everything from your profile."
+  info "Log out and back in to use everything from your new environment."
 }
 
 main() {
@@ -363,7 +337,6 @@ $NIX_CONFIG}"
   check_existing_home_flake
   ensure_nix
   load_central
-  choose_profile
   ask_gpu_setup
   detect_nvidia
   write_home_flake

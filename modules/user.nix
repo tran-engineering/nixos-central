@@ -1,12 +1,10 @@
-# The machine's primary user: account and home-manager profile.
-# The profile is users/<name> if the central repo has one, users/_default otherwise
-# (see nixos-central-internal/lib/profiles.nix). <name> is the recorded profile
-# (nixos-central.profile), else the user's name; the account keeps the user's name.
+# The machine's primary user: account and home-manager configuration.
+# Every primary user gets the base configuration (home/base.nix). A private
+# overlay adds its profile on top (nixos-central-internal/lib/default.nix),
+# selected by the recorded profile (nixos-central.profile), else the user's name.
 { config, inputs, lib, pkgs, ... }:
 let
   inherit (config.nixos-central) user;
-  profileName = if config.nixos-central.profile == null then user else config.nixos-central.profile;
-  profile = ((import ../nixos-central-internal/lib/profiles.nix).resolve profileName).path;
   # Login shell selected by the profile (modules/home/shell.nix).
   shell = config.home-manager.users.${user}.nixos-central.shell;
 in
@@ -35,6 +33,7 @@ in
     useUserPackages = true;
     backupFileExtension = "backup";
     sharedModules = [
+      ./home/base.nix
       ./home/shell.nix
       ./home/private.nix
       ./home/command.nix
@@ -42,9 +41,6 @@ in
       ./home/gc.nix
       inputs.plasma-manager.homeModules.plasma-manager
     ];
-    users.${user} = {
-      imports = [ profile ];
-      home.stateVersion = config.system.stateVersion;
-    };
+    users.${user}.home.stateVersion = config.system.stateVersion;
   };
 }
