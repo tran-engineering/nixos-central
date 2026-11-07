@@ -5,6 +5,7 @@
     ./auto-upgrade.nix
     ./command.nix
     ./docker.nix
+    ./fwupd.nix
     ./gc.nix
     ./reboot-notify.nix
     ./try.nix

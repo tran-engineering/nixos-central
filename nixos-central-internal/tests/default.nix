@@ -250,6 +250,24 @@ in
       '';
     };
 
+    # The firmware update daemon answers the primary user and the update list
+    # is refreshed on a timer.
+    fwupd = runTest {
+      name = "nixos-central-fwupd";
+      nodes.machine = {
+        imports = [ (testHost { desktop = "none"; }) ];
+      };
+      testScript = ''
+        machine.wait_for_unit("multi-user.target")
+        machine.succeed("systemctl is-enabled fwupd-refresh.timer")
+        machine.succeed("systemctl is-active fwupd-refresh.timer")
+        # D-Bus activates the daemon; get-devices exits 2 when nothing is updatable
+        status, out = machine.execute("su - alice -c 'fwupdmgr get-devices --json'")
+        assert status in (0, 2), (status, out)
+        machine.succeed("systemctl is-active fwupd.service")
+      '';
+    };
+
     # The nixos-central command with stub subcommands: help, dispatch, errors,
     # menu entries, and the generated completions (syntax; bash and fish run).
     # The menu itself (gum) needs a terminal and is checked by hand.

@@ -505,6 +505,26 @@ it needs a branch.
   nixos-central.updateNotice.days = 14;
   ```
 
+### Firmware updates
+
+Firmware (UEFI/BIOS, SSDs, docks, …) is updated through
+[fwupd](https://fwupd.org) from the Linux Vendor Firmware Service. Every
+machine refreshes the list of available updates daily; installing them is up to
+you, because a firmware update often needs a reboot and can't be undone by
+choosing an older generation. Keep laptops on power while updating.
+
+- KDE: Discover lists firmware updates next to the others.
+- GNOME: the *Firmware* app.
+- Any desktop, in a terminal:
+
+  ```sh
+  fwupdmgr get-updates   # what's available
+  fwupdmgr update        # install; asks before rebooting
+  ```
+
+Not every vendor publishes firmware there; `fwupdmgr get-devices` shows which
+devices of the machine fwupd can update.
+
 ### Trying a branch
 
 ```sh
