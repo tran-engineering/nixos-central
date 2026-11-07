@@ -7,7 +7,10 @@ repository automatically.
 ## Install
 
 1. Download the [NixOS installation image](https://nixos.org/download/#nixos-iso)
-   (graphical or minimal) and write it to a USB stick. On Linux, this downloads
+   (graphical or minimal) and write it to a USB stick. Take the **graphical**
+   image if the machine will be on a Wi-Fi that asks you to sign in through a
+   web page (hotel, university or guest networks): it has a browser for that
+   page, the minimal image has none. On Linux, this downloads
    the minimal image for 64-bit PCs and writes it in one go; replace `/dev/sdX`
    with the USB stick (find it with `lsblk`). Everything on the stick is erased.
 
@@ -17,6 +20,14 @@ repository automatically.
 2. Boot the computer from the USB stick **in UEFI mode**.
 3. Connect to the network. Cable works out of the box; for Wi-Fi run `nmtui`
    (graphical image: use the network applet; minimal image: `nmtui` or `nmcli`).
+   If you know the network's name, one line is enough (it asks for the password):
+
+   ```sh
+   nmcli --ask device wifi connect "MySSID"
+   ```
+
+   If the Wi-Fi shows a sign-in page, open Firefox on the graphical image and
+   sign in before starting the installer; until then it can't reach GitHub.
 4. Open a terminal and run:
 
    ```sh
