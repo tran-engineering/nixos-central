@@ -590,6 +590,7 @@ in
           # the VM's second interface never comes up, so the start job would wait
           # for NetworkManager-wait-online longer than the test does.
           systemd.services.nixos-upgrade = {
+            preStart = lib.mkForce "";
             script = lib.mkForce "sleep infinity";
             wants = lib.mkForce [ ];
             after = lib.mkForce [ ];
@@ -1069,7 +1070,10 @@ in
           virtualisation.memorySize = 2048;
           virtualisation.additionalPaths = [ (pkgs.writeTextDir "fake-system" "staged") ];
           # Stands in for the upgrade: succeeds once /tmp/upgrade-ok exists.
-          systemd.services.nixos-upgrade.script = lib.mkForce "test -e /tmp/upgrade-ok";
+          systemd.services.nixos-upgrade = {
+            preStart = lib.mkForce "";
+            script = lib.mkForce "test -e /tmp/upgrade-ok";
+          };
         };
       testScript =
         { nodes, ... }:

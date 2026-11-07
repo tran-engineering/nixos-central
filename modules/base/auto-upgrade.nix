@@ -1,12 +1,11 @@
 # Daily: bump the `central` input (and the private overlay, if any) in
 # /etc/nixos and stage the result as the next boot entry. The running system is
 # never touched and never rebooted.
-{ config, ... }:
+{ config, lib, ... }:
 {
   system.autoUpgrade = {
     enable = true;
     flake = "/etc/nixos";
-    flags = import ./central-update-flags.nix config;
     upgrade = false; # channels only; we have none
     operation = "boot";
     allowReboot = false;
@@ -14,6 +13,12 @@
     persistent = true;
     randomizedDelaySec = "30min";
   };
+
+  # Bump the inputs before the stock script runs nixos-rebuild. A failure here
+  # fails the unit before anything is built. `nix` is on the unit's path.
+  systemd.services.nixos-upgrade.preStart = ''
+    nix flake update ${lib.escapeShellArgs (import ./central-update-inputs.nix config)} --flake /etc/nixos --refresh
+  '';
 
   # Record every successful run, also when nothing changed, for the update notice
   # (modules/home/update-notice.nix). postStart only runs if the upgrade succeeded.

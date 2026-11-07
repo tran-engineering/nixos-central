@@ -12,17 +12,18 @@ let
     name = "nixos-central-upgrade";
     runtimeInputs = [
       config.system.build.nixos-rebuild
+      config.nix.package
       pkgs.coreutils
       config.systemd.package
     ];
     text = ''
-      update_flags=(${lib.escapeShellArgs (import ./central-update-flags.nix config)})
+      update_inputs=(${lib.escapeShellArgs (import ./central-update-inputs.nix config)})
       case "$*" in
         "") ;;
         --private)
           ${
             if config.nixos-central.private.enable then
-              "update_flags=(--update-input private)"
+              "update_inputs=(private)"
             else
               ''
                 echo "This machine has no private overlay (add one with: nixos-central private setup)." >&2
@@ -50,7 +51,7 @@ let
           ;;
       esac
 
-      # nix writes the updated lock file before building; put it back if the
+      # The lock file is updated before building; put it back if the
       # upgrade fails before a new generation was installed.
       lock=/etc/nixos/flake.lock
       backup=$(mktemp)
@@ -58,10 +59,8 @@ let
       cp "$lock" "$backup"
       profile_before=$(readlink /nix/var/nix/profiles/system || true)
 
-      if ! nixos-rebuild switch \
-        --flake "/etc/nixos#${config.nixos-central.hostname}" \
-        "''${update_flags[@]}" \
-        --refresh; then
+      if ! { nix flake update "''${update_inputs[@]}" --flake /etc/nixos --refresh &&
+        nixos-rebuild switch --flake "/etc/nixos#${config.nixos-central.hostname}"; }; then
         if [ "$(readlink /nix/var/nix/profiles/system || true)" = "$profile_before" ]; then
           cp "$backup" "$lock"
           echo "Upgrade failed; nothing was changed." >&2
