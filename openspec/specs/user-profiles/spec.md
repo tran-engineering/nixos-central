@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Defines how a machine's primary user gets an account and a personal environment from the central repository, falling back to a shared default profile until a personal one exists.
+Defines how a machine's primary user gets an account and an environment: the central base configuration plus, if set up, a profile from their private overlay.
 
 ## Requirements
 
