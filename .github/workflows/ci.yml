@@ -30,17 +30,22 @@ jobs:
           NIXOS_CENTRAL_FLAKE: git+file://${{ github.workspace }}?shallow=1 # checkout is a shallow clone
         run: |
           echo '# pre-existing' >> ~/.bashrc
-          bash nixos-central-internal/installer/home-only.sh --profile _default --install-nix --no-gpu-setup
+          bash nixos-central-internal/installer/home-only.sh --install-nix --no-gpu-setup
 
       - name: Check the installed home
         shell: bash -l {0}
         run: |
           set -eux
-          test "$EDITOR" = vim                                  # from users/_default
+          test "$EDITOR" = vim                                  # from modules/home/base.nix
           command -v home-manager vim
           grep -q pre-existing ~/.bashrc.backup                 # replaced dotfile kept
           test -f ~/.config/systemd/user/home-manager-auto-upgrade.timer
-          grep -q 'profile = "_default"' ~/.config/home-manager/flake.nix
+          if grep -q 'profile = ' ~/.config/home-manager/flake.nix; then exit 1; fi   # no profile without an overlay
+
+      - name: Refuses --profile, pointing to the overlay
+        run: |
+          if out=$(bash nixos-central-internal/installer/home-only.sh --profile kt 2>&1); then exit 1; fi
+          grep -q "nixos-central private setup \[<flake-url>\] --profile kt" <<<"$out"
 
       - name: Add and remove a private overlay
         shell: bash -l {0}
@@ -55,11 +60,11 @@ jobs:
           grep -q 'profile = "ci-overlay";' ~/.config/home-manager/flake.nix   # overlay-only profile
           grep -q 'ci-overlay' ~/.nixos-central-overlay-profile                # that profile's file
           grep -q 'from the overlay' ~/.nixos-central-overlay-test            # overlay's file
-          command -v fish                                                     # centralModules.fish
+          command -v zsh                                                      # centralModules.zsh
           grep -q 'nix flake update central private' "$(sed -n 's/^ExecStart=//p' ~/.config/systemd/user/home-manager-auto-upgrade.service)"
           grep -q 'github.com ssh-ed25519' ~/.ssh/known_hosts
           nixos-central private remove
-          if grep -qE 'inputs\.private|inherit private|central, private' ~/.config/home-manager/flake.nix; then exit 1; fi
+          if grep -qE 'inputs\.private|inherit private|central, private|profile = ' ~/.config/home-manager/flake.nix; then exit 1; fi
           test ! -e ~/.nixos-central-overlay-test
           test ! -e ~/.nixos-central-overlay-profile
 

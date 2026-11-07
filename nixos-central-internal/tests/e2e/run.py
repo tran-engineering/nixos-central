@@ -95,6 +95,17 @@ class Repo:
         with open(full, "w") as f:
             f.write(text)
 
+    BASE = os.path.join("modules", "home", "base.nix")
+
+    def edit_base(self, extra):
+        """Rewrite the base configuration every user gets (modules/home/base.nix) as the
+        original plus `extra` (Nix attributes), added as an imported module so it can't
+        clash with the base's own attributes."""
+        if not hasattr(self, "base_orig"):
+            self.base_orig = open(os.path.join(self.work, self.BASE)).read()
+        head, _, tail = self.base_orig.rpartition("}")
+        self.write(self.BASE, f"{head}  imports = [ {{ {extra} }} ];\n}}{tail}")
+
     def private_overlay(self, marker):
         """(Re)write the served private overlay: a module-only flake placing ~/overlay-marker,
         with profiles `default` and `ci-overlay` (which also places ~/overlay-profile)."""
@@ -356,7 +367,7 @@ def phase_install(args, repo):
     vm.expect(SHELL_PROMPT)
     flake = vm.succeed("sudo cat /mnt/etc/nixos/flake.nix")
     check(f'inputs.private.url = "{PRIVATE_URL}";' in flake and "inherit private;" in flake, "overlay declared in the machine flake")
-    check('profile = "ci-overlay"; # in the central repository or the private overlay' in flake, "profile recorded in the machine flake")
+    check('profile = "ci-overlay"; # profile of the private overlay' in flake, "profile recorded in the machine flake")
     # Numeric owner: the live system's /etc/passwd has other names for the same uids.
     uid = vm.succeed("sudo awk -F: '$1 == \"alice\" { print $3 }' /mnt/etc/passwd").split()[-1]
     out = vm.succeed("sudo stat -c '%n %a %u' /mnt/home/alice /mnt/home/alice/.ssh /mnt/home/alice/.ssh/id_ed25519 /mnt/home/alice/.ssh/id_ed25519.pub")
@@ -433,7 +444,7 @@ def phase_installed(args, repo):
     rc, _ = vm.run("systemctl is-active display-manager")
     check(rc != 0, "desktop 'none': no display manager")
     check("Hello, world!" in vm.succeed("nix-shell -p hello --run hello", 900), "nix-shell -p works")
-    check("vim" in vm.succeed("echo $EDITOR"), "no users/alice yet: default profile (EDITOR=vim)")
+    check("vim" in vm.succeed("echo $EDITOR"), "base configuration active (EDITOR=vim)")
 
     log("private overlay from the installer: profile active, key usable, remove")
     check("ci-overlay" in vm.succeed("cat ~/overlay-profile"), "overlay profile ci-overlay active for alice")
@@ -446,9 +457,9 @@ def phase_installed(args, repo):
     rc, _ = vm.run("test -e ~/overlay-profile || test -e ~/overlay-marker")
     check(rc != 0, "overlay's files removed")
 
-    log("auto-upgrade: personal profile merged later is staged for next boot")
-    repo.write("users/alice/default.nix", '{ lib, ... }: {\n  imports = [ ../_default ];\n  home.sessionVariables.EDITOR = lib.mkForce "nano";\n}\n')
-    repo.commit("add alice profile")
+    log("auto-upgrade: central change merged later is staged for next boot")
+    repo.edit_base('home.sessionVariables.EDITOR = "nano";')
+    repo.commit("base: EDITOR=nano")
     repo.git("push", "-q", "origin", "main")
     before = vm.succeed("readlink /run/current-system; md5sum /etc/nixos/flake.lock").split() + [boot_entries(vm)]
     rc, out = sudo(vm, "systemctl start nixos-upgrade.service", 3600)
@@ -461,7 +472,7 @@ def phase_installed(args, repo):
 
     log("nixos-central try: branch active now, lock untouched, no boot entry")
     repo.git("checkout", "-q", "-b", "alice-wip")
-    repo.write("users/alice/default.nix", '{ lib, ... }: {\n  imports = [ ../_default ];\n  home.sessionVariables.EDITOR = lib.mkForce "nano";\n  home.file.try-marker.text = "wip";\n}\n')
+    repo.edit_base('home.sessionVariables.EDITOR = "nano"; home.file.try-marker.text = "wip";')
     repo.commit("wip")
     repo.git("push", "-q", "origin", "alice-wip")
     repo.git("checkout", "-q", "main")
@@ -484,7 +495,7 @@ def phase_installed(args, repo):
     rc, _ = vm.run("test -e ~/try-marker")
     check(rc != 0, "try change gone after reboot")
     check(vm.succeed("readlink -f /run/booted-system").split()[-1] == staged, "booted the staged generation")
-    check("nano" in vm.succeed("bash -lc 'echo $EDITOR'"), "personal profile users/alice active")
+    check("nano" in vm.succeed("bash -lc 'echo $EDITOR'"), "central base change active (EDITOR=nano)")
 
     log("nixos-central upgrade: latest main active right away and after reboot, ends a tried branch")
     vm.send("sudo -k")
@@ -494,8 +505,8 @@ def phase_installed(args, repo):
     vm.expect(r"__TRY(\d+)", 3600)
     check(vm.p.match.group(1) == "0", "nixos-central try alice-wip succeeded")
     vm.expect(SHELL_PROMPT)
-    repo.write("users/alice/default.nix", '{ lib, ... }: {\n  imports = [ ../_default ];\n  home.sessionVariables.EDITOR = lib.mkForce "nano";\n  home.file.upgrade-marker.text = "upgraded";\n}\n')
-    repo.commit("alice: upgrade marker")
+    repo.edit_base('home.sessionVariables.EDITOR = "nano"; home.file.upgrade-marker.text = "upgraded";')
+    repo.commit("base: upgrade marker")
     repo.git("push", "-q", "origin", "main")
     before = vm.succeed("md5sum /etc/nixos/flake.lock").split() + [boot_entries(vm)]
     vm.send("sudo -k")

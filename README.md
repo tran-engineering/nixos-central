@@ -95,8 +95,8 @@ On failure it names the failed step and the log file
 
 ## Install on another Linux distribution
 
-Your [profile](#users-and-profiles) also works without NixOS, e.g. on Ubuntu,
-Fedora or Arch (x86_64 or aarch64). Run as yourself, not as root:
+Your [environment](#users-and-profiles) also works without NixOS, e.g. on
+Ubuntu, Fedora or Arch (x86_64 or aarch64). Run as yourself, not as root:
 
 ```sh
 curl -sL https://tran-engineering.github.io/nixos-central/home-only.sh | sh
@@ -104,22 +104,31 @@ curl -sL https://tran-engineering.github.io/nixos-central/home-only.sh | sh
 
 It changes only your home directory, except for two steps it asks about first:
 installing [Nix](https://nixos.org/download) if it is missing, and a one-time
-GPU driver setup (both need `sudo`). It sets up your current login name, so a
-different name than on your NixOS machines is fine: pick the profile you want.
+GPU driver setup (both need `sudo`). It sets up the base configuration for
+your current login name. Your own profile comes from your
+[private overlay](#private-overlay), added afterwards with
+`nixos-central private setup [<flake-url>] --profile NAME`; a different login
+name than on your NixOS machines is fine.
 
 | Option | Default | Notes |
 |---|---|---|
-| `--profile NAME` | asked; suggests your login name's profile, else `_default` | one of the profiles in `users/` |
 | `--install-nix` | asked | install Nix if missing |
 | `--replace-existing` | asked | move an existing `~/.config/home-manager` aside (`.backup-<date>`) |
 | `--gpu-setup` / `--no-gpu-setup` | asked, suggests yes | |
 
-Files in your home that the profile takes over (e.g. `~/.bashrc`) are kept as
-`<file>.backup`. Your login shell is not changed; if the profile
-[selects](#login-shell) fish or zsh, the installer prints how to switch.
+`--profile` is no longer accepted (profiles came from this repository before);
+the installer stops and names the `nixos-central private setup` command instead.
+
+Files in your home that the configuration takes over (e.g. `~/.bashrc`) are
+kept as `<file>.backup`. Your login shell is not changed; if your profile
+[selects](#login-shell) fish or zsh, the installer or `nixos-central private setup`
+prints how to switch.
 
 The home's facts live in `~/.config/home-manager/flake.nix` (login name, home
-directory, profile, NVIDIA driver); everything else comes from this repository.
+directory, NVIDIA driver, and the private overlay and its profile once added);
+everything else comes from this repository. Homes installed earlier record
+`profile = "_default";` there; that line is harmless and is replaced when you
+add an overlay with `--profile`.
 It updates itself daily (`systemctl --user list-timers home-manager-auto-upgrade.timer`).
 New terminals tell you when it has not managed to update for a while
 ([update notice](#updates)).
@@ -177,7 +186,7 @@ comes from this repository (the `central` input):
 | `disk` | disk the system was installed on |
 | `keyboardLayout` | keyboard layout: `us`, `de`, `sg` (Swiss German) or `sf` (Swiss French); console and graphical session |
 | `stateVersion` | NixOS release at install time |
-| `profile` | optional: profile to use instead of `user`'s name, in this repository and the [private overlay](#private-overlay) (see [Users and profiles](#users-and-profiles)); the account keeps the name `user` |
+| `profile` | optional: profile of the [private overlay](#private-overlay) to use instead of `user`'s name (see [Users and profiles](#users-and-profiles)); the account keeps the name `user`. Without an overlay it has no effect (the build warns) |
 | `private` | optional: the [private overlay](#private-overlay) flake |
 | `modules` | extra NixOS modules; the installer adds `hardware-configuration.nix` |
 
@@ -223,39 +232,42 @@ printing for every graphical desktop come from `modules/base/graphical.nix`.
 
 ## Users and profiles
 
-The primary user's environment is a [home-manager](https://github.com/nix-community/home-manager)
-profile from this repository:
+The primary user's environment is built with [home-manager](https://github.com/nix-community/home-manager)
+from two parts:
 
-- `users/<name>/` if it exists,
-- otherwise the shared default `users/_default/`.
+- the **base configuration** from this repository, `modules/home/base.nix`
+  (bash, git, Firefox, vim, htop, wget, unzip; `EDITOR=vim`), which every user
+  gets, and
+- the user's **profile** from their [private overlay](#private-overlay), if the
+  machine has one. This repository holds no personal profiles.
 
-`<name>` is the user's name, unless the machine flake records a different
-profile next to `user`. The same name also selects the profile of your
-[private overlay](#private-overlay), so one generic overlay profile can serve
-any user:
+The overlay profile is chosen by the user's name, unless the machine flake
+records a different profile next to `user`, so one generic overlay profile can
+serve any user:
 
 ```nix
 user = "alice";
-profile = "developer"; # in the central repository or the private overlay
+profile = "developer"; # profile of the private overlay
 ```
 
-Here `alice` gets `users/developer/` (or `users/_default/` if there is none)
-plus the overlay's `developer` profile; her login name and home directory stay
-`alice`. The installer writes this line when you choose an overlay profile;
+Here `alice` gets the base configuration plus the overlay's `developer`
+profile; her login name and home directory stay `alice`. The installer writes
+this line when you choose an overlay profile;
 `nixos-central private setup --profile` adds it later, and
-`nixos-central private remove` takes it out again.
+`nixos-central private remove` takes it out again. Without an overlay, a
+recorded profile has no effect and the build warns about it.
 
-This is decided every time the system is built, so a profile added later is
-picked up by the machine's next update. A personal profile **replaces** the
-default; to build on it, import it:
+This is decided every time the system is built, so a profile added to the
+overlay later is picked up by the machine's next update. The base
+configuration only sets defaults; a profile overrides them by setting the same
+option, without `lib.mkForce`:
 
 ```nix
-# users/alice/default.nix
-{ pkgs, lib, ... }:
+# homeModules.alice of your private overlay
+{ pkgs, ... }:
 {
-  imports = [ ../_default ];
   home.packages = [ pkgs.gimp ];
-  home.sessionVariables.EDITOR = lib.mkForce "nano";
+  home.sessionVariables.EDITOR = "nano";
 }
 ```
 
@@ -286,10 +298,10 @@ programs.plasma = {
 
 This repository holds only what is useful to anyone. Your own setup (which
 modules you use, your name and email, fonts, themes, work files) belongs in
-your [private overlay](#private-overlay), not in a profile here.
+your [private overlay](#private-overlay).
 
-Permanent changes to shared configuration go through a pull request to this
-repository. To try a package without changing anything:
+Permanent changes for every user (the base configuration, shared modules) go
+through a pull request to this repository. To try a package without changing anything:
 
 ```sh
 nix-shell -p ripgrep          # or: nix shell nixpkgs#ripgrep
@@ -321,9 +333,8 @@ overlay receives:
 }
 ```
 
-Profiles inside this repository can do the same, or import by path
-(`../../modules/home/git.nix`). The module names are an interface for overlays:
-renaming or removing one is a breaking change.
+The module names are an interface for overlays: renaming or removing one is a
+breaking change. The base configuration includes none of them.
 
 The modules set no names or emails; put those in your overlay. Their workflow
 defaults (e.g. git's) are overridden by setting the same option:
@@ -346,20 +357,17 @@ Linux distribution, changing the login shell needs root, so the home installer
 prints the `chsh` command instead. Selecting a shell installs it; for zsh,
 import the `zsh` module as well for the configuration above.
 
-Profiles named `ci-*` (e.g. `users/ci-user`) exist only for tests and are not
-offered by the home installer.
-
 ### Private overlay
 
 Your own setup lives in a private repository you control: which shared
 modules you use, your login shell, name and email, fonts and themes, and files
 that must not be public (work SSH configuration, internal scripts). It is added
 to a machine during installation (see [Install](#install)) or afterwards, and
-applied on top of the default profile.
+applied on top of the base configuration.
 
 The overlay is a flake **without inputs** that only exports modules, one per
-profile; packages and options come from this repository. Like `users/` here,
-it can hold several people's profiles:
+profile; packages and options come from this repository. It can hold several
+people's profiles:
 
 ```nix
 # flake.nix in your private repository
@@ -382,8 +390,8 @@ it can hold several people's profiles:
 }
 ```
 
-The profile is chosen by the same name as here: the recorded `profile` if the
-local flake has one, otherwise the user's name. So a generic profile such as
+The profile is chosen by name: the recorded `profile` if the local flake has
+one, otherwise the user's name. So a generic profile such as
 `developer` can serve anyone who records it. Without a matching
 profile, `homeModules.default` is used; if that doesn't exist either, the build
 fails and lists the overlay's profiles.
@@ -409,17 +417,16 @@ distributions):
    (`nixos-central private setup`). A fork changes this default in
    `nixos-central-internal/lib/default-private.nix`.
 
-   Add `--profile NAME` to use a profile that exists only in your overlay,
-   e.g. a generic `developer` profile (the home installer only offers profiles
-   from this repository, so install with `_default` first):
+   Add `--profile NAME` to use a profile other than your user's name, e.g. a
+   generic `developer` profile:
 
    ```sh
    nixos-central private setup git+ssh://git@github.com/alice/private --profile developer
    ```
 
-   On NixOS this records `profile = "developer";` next to `user` in
-   `/etc/nixos/flake.nix`; `nixos-central private remove` takes it out again,
-   so the user's name selects the profile as before.
+   This records `profile = "developer";` next to `user` in the local flake;
+   `nixos-central private remove` takes it out again together with the
+   overlay.
 
 `nixos-central private` shows which overlay a machine or home uses, if any.
 
@@ -547,13 +554,15 @@ shellcheck nixos-central-internal/installer/install.sh
 shellcheck nixos-central-internal/installer/home-only.sh
 ```
 
-Sample hosts used in CI: `ci-gnome`, `ci-kde`, `ci-niri-noctalia`, `ci-none`, `ci-default-profile`
+Sample hosts used in CI: `ci-gnome`, `ci-kde`, `ci-niri-noctalia`, `ci-none`
 (`nixosConfigurations`, not meant to be installed). Sample standalone homes:
-`ci-home-default`, `ci-home-renamed`, `ci-home-aarch64`, `ci-home-modules-aarch64`
-(`homeConfigurations`). Every selectable profile is also evaluated standalone
-(`home-profile-<name>` checks). The test profile `users/ci-modules` uses every
-shared module and is evaluated on NixOS and standalone (`host-eval-ci-modules`,
-`home-eval-ci-modules`). `central-modules` guards the module names overlays
+`ci-home-default` (base configuration only), `ci-home-dotted`, `ci-home-aarch64`,
+`ci-home-modules-aarch64` (`homeConfigurations`). Test profiles live in
+`nixos-central-internal/tests/profiles/` and are added only by these CI
+configurations: `ci-user` (overrides one base setting) and `ci-modules`, which
+uses every shared module and is evaluated on NixOS and standalone
+(`host-eval-ci-modules`, `home-eval-ci-modules`). `host-profile` and
+`overlay-profiles` test how a recorded profile selects the overlay profile. `central-modules` guards the module names overlays
 rely on; `overlay-eval` and `overlay-rejects-inputs` test private overlays with
 `nixos-central-internal/tests/overlay`. These checks don't build packages;
 those come from the NixOS binary cache.

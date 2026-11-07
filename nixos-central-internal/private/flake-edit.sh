@@ -8,7 +8,7 @@
 #   flake_add_overlay           <flake> <nixos|home> <url> [profile]
 #   flake_remove_overlay        <flake> <nixos|home>
 
-PROFILE_COMMENT="# in the central repository or the private overlay"
+PROFILE_COMMENT="# profile of the private overlay"
 
 flake_has_overlay() { grep -q '^ *inputs\.private\.url' "$1"; }
 
@@ -34,10 +34,10 @@ flake_check_overlay_anchors() {
   [ "$mode" = nixos ] || before_text='stateVersion = "...";'
   flake_require_anchor "$flake" "$(flake_overlay_before "$mode")" "$before_text"
   [ -n "$profile" ] || return 0
-  if [ "$mode" = nixos ] && ! grep -q '^ *profile = "[^"]*";' "$flake"; then
-    flake_require_anchor "$flake" '^ *user = "[^"]*";' 'user = "...";'
-  else
+  if grep -q '^ *profile = "[^"]*";' "$flake"; then
     flake_require_anchor "$flake" '^ *profile = "[^"]*";' 'profile = "...";'
+  else
+    flake_require_anchor "$flake" '^ *user = "[^"]*";' 'user = "...";'
   fi
 }
 
@@ -62,22 +62,19 @@ flake_add_overlay() {
   if [ "$has_profile" = 1 ]; then
     sed -i "s|^\( *profile = \)\"[^\"]*\";.*$|\1\"$p\"; $PROFILE_COMMENT|" "$flake"
   else
-    # NixOS: the profile goes right after the user.
+    # The profile goes right after the user.
     sed -i "s|^\( *\)user = \"[^\"]*\";.*$|&\n\1profile = \"$p\"; $PROFILE_COMMENT|" "$flake"
   fi
 }
 
-# On NixOS the recorded profile goes too: without the overlay, the user's name
-# selects the profile again. Standalone homes keep theirs (it is a fact of the
-# home, from its template).
+# The recorded profile goes too: it only selects a profile of the overlay.
+# `mode` is kept for callers; both modes are edited the same way.
 flake_remove_overlay() {
-  local flake=$1 mode=$2
-  local profile_expr='/^ *profile = "[^"]*";/d'
-  [ "$mode" = nixos ] || profile_expr=''
+  local flake=$1
   sed -i \
     -e '/^ *inputs\.private\.url = /d' \
     -e '/^ *inherit private;$/d' \
     -e 's|{ *central, *private, *\.\.\. *}:|{ central, ... }:|' \
-    ${profile_expr:+-e "$profile_expr"} \
+    -e '/^ *profile = "[^"]*";/d' \
     "$flake"
 }

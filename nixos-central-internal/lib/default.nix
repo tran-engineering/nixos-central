@@ -5,6 +5,39 @@ let
   overlay = import ./overlay.nix { inherit lib; };
   keyboardLayouts = import ./keyboard-layouts.nix;
 
+  # Profiles come only from the private overlay; a recorded profile selects the
+  # overlay's homeModules.<profile>. Warnings where a recorded profile has no
+  # effect. "_default" was written by earlier home installers and is treated as
+  # if no profile were recorded.
+  profileWarnings =
+    {
+      profile,
+      private, # checked overlay, or null
+      flakePath,
+    }:
+    let
+      recorded = profile != null && profile != "_default";
+    in
+    lib.optional (recorded && private == null) ''
+      nixos-central: profile "${profile}" has no effect without a private overlay (profiles come only from the overlay).
+      Remove the profile line from ${flakePath}, or add an overlay: nixos-central private setup [<flake-url>] --profile ${profile}
+    ''
+    ++ lib.optional (recorded && private != null && !(private.homeModules ? ${profile}) && private.homeModules ? default) ''
+      nixos-central: the private overlay has no profile "${profile}"; using its default profile.
+      Choose another one in ${flakePath} (overlay profiles: ${toString (builtins.attrNames private.homeModules)}).
+    '';
+
+  # Home modules every primary user and standalone home gets from central.
+  baseHomeModules = [
+    ../../modules/home/base.nix
+    ../../modules/home/shell.nix
+    ../../modules/home/private.nix
+    ../../modules/home/command.nix
+    ../../modules/home/update-notice.nix
+    ../../modules/home/gc.nix
+    inputs.plasma-manager.homeModules.plasma-manager
+  ];
+
   # All NixOS modules of a machine, without evaluating them (also used by tests).
   hostModules =
     {
@@ -17,13 +50,11 @@ let
       modules ? [ ],
       system ? "x86_64-linux",
       private ? null, # private overlay flake (README, "Private overlay")
-      profile ? null, # profile in place of `user` (central and overlay); like mkHome
+      profile ? null, # overlay profile in place of `user`; like mkHome
     }:
     let
       checked = overlay.check private;
       name = if profile == null then user else profile;
-      resolved = (import ./profiles.nix).resolve name;
-      inOverlay = private != null && checked.homeModules ? ${name};
     in
     [
       disko.nixosModules.disko
@@ -47,10 +78,11 @@ let
             ;
         };
         home-manager.extraSpecialArgs = { inherit (overlay) centralModules; };
-        warnings = lib.optional (profile != null && resolved.fallback && !inOverlay) ''
-          nixos-central: profile "${profile}" exists neither in the central repository nor in the private overlay; using the default profile.
-          Choose another one in /etc/nixos/flake.nix (central profiles: ${toString (import ./profiles.nix).names}).
-        '';
+        warnings = profileWarnings {
+          inherit profile;
+          private = if private == null then null else checked;
+          flakePath = "/etc/nixos/flake.nix";
+        };
       }
     ]
     ++ lib.optionals (private != null) (
@@ -66,9 +98,62 @@ let
       ++ lib.optional (checked ? nixosModules.default) checked.nixosModules.default
     )
     ++ modules;
+
+  # Arguments of home-manager's homeManagerConfiguration for a standalone home,
+  # without evaluating it (also used by tests to add a test profile).
+  homeConfigArgs =
+    {
+      user,
+      homeDirectory,
+      stateVersion,
+      system ? "x86_64-linux",
+      profile ? null,
+      nvidia ? null, # { version; sha256; } of the host's driver
+      private ? null, # private overlay flake (README, "Private overlay")
+    }:
+    let
+      shared = import ./nixpkgs.nix { inherit inputs; };
+      name = if profile == null then user else profile;
+      checked = if private == null then null else overlay.check private;
+      # Recording the host's NVIDIA driver means using it, which requires its license.
+      nixpkgsConfig = shared.config // lib.optionalAttrs (nvidia != null) { nvidia.acceptLicense = true; };
+    in
+    {
+      pkgs = import nixpkgs {
+        inherit system;
+        config = nixpkgsConfig;
+        overlays = [ (shared.unstableOverlay nixpkgsConfig) ];
+      };
+      extraSpecialArgs = { inherit (overlay) centralModules; };
+      modules =
+        baseHomeModules
+        ++ [
+          ../../modules/home/standalone.nix
+          {
+            home.username = user;
+            home.homeDirectory = homeDirectory;
+            home.stateVersion = stateVersion;
+            warnings = profileWarnings {
+              inherit profile;
+              private = checked;
+              flakePath = "~/.config/home-manager/flake.nix";
+            };
+          }
+          (lib.mkIf (nvidia != null) {
+            targets.genericLinux.gpu.nvidia = {
+              enable = true;
+              inherit (nvidia) version sha256;
+            };
+          })
+        ]
+        ++ lib.optionals (private != null) [
+          (overlay.homeModule checked name)
+          { nixos-central.private.enable = true; }
+        ];
+    };
 in
 {
-  inherit hostModules;
+  inherit hostModules homeConfigArgs;
 
   desktopNames = import ./desktop-names.nix;
 
@@ -87,9 +172,6 @@ in
   githubHostKey = import ./github-host-key.nix;
   privateFlakeEdit = ../private/flake-edit.sh;
 
-  # Profiles offered by home-only.sh (see profiles.nix).
-  profileNames = (import ./profiles.nix).names;
-
   # NixOS release of the pinned nixpkgs, e.g. "26.05". The installer writes it
   # into new machine flakes as their stateVersion.
   release = lib.trivial.release;
@@ -105,60 +187,7 @@ in
 
   # Build a standalone home (Linux without NixOS) from its facts. This is the
   # only interface ~/.config/home-manager flakes depend on; keep it backwards
-  # compatible. `profile` defaults to the profile named like `user`.
-  mkHome =
-    {
-      user,
-      homeDirectory,
-      stateVersion,
-      system ? "x86_64-linux",
-      profile ? null,
-      nvidia ? null, # { version; sha256; } of the host's driver
-      private ? null, # private overlay flake (README, "Private overlay")
-    }:
-    let
-      shared = import ./nixpkgs.nix { inherit inputs; };
-      name = if profile == null then user else profile;
-      resolved = (import ./profiles.nix).resolve name;
-      inOverlay = private != null && (overlay.check private).homeModules ? ${name};
-      # Recording the host's NVIDIA driver means using it, which requires its license.
-      nixpkgsConfig = shared.config // lib.optionalAttrs (nvidia != null) { nvidia.acceptLicense = true; };
-    in
-    home-manager.lib.homeManagerConfiguration {
-      pkgs = import nixpkgs {
-        inherit system;
-        config = nixpkgsConfig;
-        overlays = [ (shared.unstableOverlay nixpkgsConfig) ];
-      };
-      extraSpecialArgs = { inherit (overlay) centralModules; };
-      modules = [
-        resolved.path
-        ../../modules/home/shell.nix
-        ../../modules/home/private.nix
-        ../../modules/home/command.nix
-        ../../modules/home/update-notice.nix
-        ../../modules/home/gc.nix
-        inputs.plasma-manager.homeModules.plasma-manager
-        ../../modules/home/standalone.nix
-        {
-          home.username = user;
-          home.homeDirectory = homeDirectory;
-          home.stateVersion = stateVersion;
-          warnings = lib.optional (profile != null && resolved.fallback && !inOverlay) ''
-            nixos-central: profile "${profile}" does not exist in the central repository; using the default profile.
-            Choose another one in ~/.config/home-manager/flake.nix (available: ${toString (import ./profiles.nix).names}).
-          '';
-        }
-        (lib.mkIf (nvidia != null) {
-          targets.genericLinux.gpu.nvidia = {
-            enable = true;
-            inherit (nvidia) version sha256;
-          };
-        })
-      ]
-      ++ lib.optionals (private != null) [
-        (overlay.homeModule (overlay.check private) name)
-        { nixos-central.private.enable = true; }
-      ];
-    };
+  # compatible. `profile` selects the private overlay's profile; it defaults to
+  # the one named like `user`.
+  mkHome = args: home-manager.lib.homeManagerConfiguration (homeConfigArgs args);
 }

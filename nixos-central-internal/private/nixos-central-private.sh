@@ -17,9 +17,9 @@ Usage: nixos-central private          show the private overlay
        nixos-central private remove   remove it and activate the result
 
 <flake-url>     the overlay's repository; default: $DEFAULT_URL
---profile NAME  use profile NAME (in the central repository and the overlay)
-                instead of the recorded one, or of the user's name. On NixOS,
-                remove takes the recorded profile out again.
+--profile NAME  use the overlay's profile NAME instead of the recorded one,
+                or of the user's name. remove takes the recorded profile out
+                again.
 
 Example: nixos-central private setup git+ssh://git@github.com/alice/private --profile developer
 EOF

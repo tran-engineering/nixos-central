@@ -35,7 +35,7 @@ in
     profile = lib.mkOption {
       type = lib.types.nullOr (lib.types.strMatching "[A-Za-z0-9._-]+");
       default = null;
-      description = "Profile used in place of the primary user's name, in the central repository (users/<profile>) and in the private overlay. The account keeps the user's name. null: the user's name.";
+      description = "Profile of the private overlay (homeModules.<profile>) used in place of the primary user's name. Without an overlay it has no effect (warning). The account keeps the user's name. null: the user's name.";
     };
 
     private.enable = lib.mkEnableOption "the private overlay of the machine flake (set by mkHost)";

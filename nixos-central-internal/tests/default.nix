@@ -849,7 +849,7 @@ in
         flake_add_overlay host.nix nixos 'git+ssh://git@github.com/alice/private?ref=a&b=1' developer
         expect 'inputs.private.url = "git+ssh://git@github.com/alice/private?ref=a&b=1";
         { central, private, ... }:
-        profile = "developer"; # in the central repository or the private overlay
+        profile = "developer"; # profile of the private overlay
         inherit private;' "$(added host.nix)"
         grep -q '^        profile = "developer";' host.nix   # indented like user
         grep -q '^        inherit private;' host.nix
@@ -862,12 +862,26 @@ in
         flake_remove_overlay host.nix nixos
         cmp host.nix host.nix.orig
 
-        # Standalone home: the template's profile line is rewritten and kept on remove.
+        # Standalone home: the template has no profile line; it goes after the
+        # user and is removed again with the overlay.
+        ! grep -q 'profile = ' home.nix
         flake_add_overlay home.nix home git+ssh://git@github.com/alice/private kt
-        grep -q '^ *profile = "kt"; # in the central repository or the private overlay$' home.nix
+        expect 'inputs.private.url = "git+ssh://git@github.com/alice/private";
+        { central, private, ... }:
+        profile = "kt"; # profile of the private overlay
+        inherit private;' "$(added home.nix)"
+        grep -q '^        profile = "kt";' home.nix   # indented like user
         flake_remove_overlay home.nix home
-        grep -q '^ *profile = "kt";' home.nix
-        ! grep -q 'private' home.nix
+        cmp home.nix home.nix.orig
+
+        # Home flake from an earlier installer: its profile line is rewritten,
+        # and removed with the overlay.
+        sed 's|^\( *\)user = \(.*\)$|&\n\1profile = "_default"; # one of: _default|' home.nix.orig > old.nix
+        flake_add_overlay old.nix home git+ssh://git@github.com/alice/private kt
+        grep -q '^ *profile = "kt"; # profile of the private overlay$' old.nix
+        [ "$(grep -c 'profile = ' old.nix)" -eq 1 ]
+        flake_remove_overlay old.nix home
+        ! grep -q 'profile = \|private' old.nix
 
         # A flake of another shape is refused unchanged.
         echo '{ }' > other.nix
