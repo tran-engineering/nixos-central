@@ -19,6 +19,11 @@ let
     cp ${./niri-noctalia/config.kdl} $out
   '';
 
+  greeterConfig = pkgs.runCommand "niri-sddm-greeter.kdl" { nativeBuildInputs = [ niri ]; } ''
+    niri validate -c ${./niri-noctalia/sddm-greeter.kdl}
+    cp ${./niri-noctalia/sddm-greeter.kdl} $out
+  '';
+
   # Started with and stopped with the graphical session.
   sessionService = description: execStart: {
     inherit description;
@@ -42,7 +47,13 @@ in
     services.displayManager = {
       sddm = {
         enable = true;
-        wayland.enable = true;
+        # Under the default Weston kiosk compositor the greeter shows no mouse
+        # cursor: the Qt greeter never sets one and Weston draws none for it.
+        # niri (already installed) draws its own cursor.
+        wayland = {
+          enable = true;
+          compositorCommand = "${lib.getExe niri} -c ${greeterConfig}";
+        };
       };
       defaultSession = "niri";
     };
