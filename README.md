@@ -194,6 +194,10 @@ To change the desktop or keyboard layout later, edit `desktop` or
 | `niri-noctalia` | [niri](https://github.com/YaLTeR/niri) tiling compositor with the [Noctalia](https://github.com/noctalia-dev/noctalia-shell) shell (Wayland, SDDM) |
 | `none` | no graphical desktop, console login |
 
+SDDM uses the [Catppuccin](https://github.com/catppuccin/sddm) Mocha theme.
+To use another one, set `services.displayManager.sddm.theme` in your machine
+or private config.
+
 On `niri-noctalia`, the main keys are:
 
 | Key | Action |
