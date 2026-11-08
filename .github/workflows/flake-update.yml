@@ -1,6 +1,12 @@
 name: Update flake.lock
 
-# Opens a PR; CI builds it. Machines only pick it up once it is merged to main.
+# Opens (or updates) a PR with the new flake.lock, runs `nix flake check` on it
+# here and merges it if the check passes. If the check fails, the PR stays open
+# for a human. Machines pick up the update once it is on main.
+#
+# The check runs in this workflow because the PR is opened with GITHUB_TOKEN,
+# and GitHub starts no other workflows (such as CI) for events from that token,
+# neither for the PR nor for the merge commit on main.
 on:
   workflow_dispatch:
   schedule:
@@ -11,16 +17,60 @@ permissions:
   contents: write
   pull-requests: write
 
+concurrency:
+  group: flake-update
+  cancel-in-progress: false
+
 jobs:
   update-flake-lock:
     runs-on: ubuntu-latest
+    env:
+      BRANCH: update-flake-lock
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v5
+
+      # Sample hosts and VM tests need more than the runner's default free space.
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+
       - uses: DeterminateSystems/nix-installer-action@main
+
       - uses: DeterminateSystems/update-flake-lock@main
         with:
           pr-title: "Update flake.lock"
-          branch: update-flake-lock
+          branch: ${{ env.BRANCH }}
           pr-labels: |
             dependencies
             automated
+
+      # Also picks up a PR left open by an earlier run whose check failed.
+      - name: Find the open update PR
+        id: pr
+        run: |
+          pr=$(gh pr list --head "$BRANCH" --state open --json number,headRefOid --jq '.[0] // empty')
+          if [ -z "$pr" ]; then
+            echo "No open update PR; nothing to merge."
+            exit 0
+          fi
+          echo "number=$(jq -r .number <<<"$pr")" >>"$GITHUB_OUTPUT"
+          echo "sha=$(jq -r .headRefOid <<<"$pr")" >>"$GITHUB_OUTPUT"
+
+      - name: Check out the update
+        if: steps.pr.outputs.number != ''
+        run: |
+          git fetch --no-tags origin "${{ steps.pr.outputs.sha }}"
+          git checkout --detach "${{ steps.pr.outputs.sha }}"
+
+      # Evaluates everything, builds the ci-* sample hosts and runs the VM tests,
+      # like the flake job in ci.yml.
+      - name: nix flake check
+        if: steps.pr.outputs.number != ''
+        run: nix flake check -L
+
+      - name: Merge
+        if: steps.pr.outputs.number != ''
+        run: |
+          # --match-head-commit: merge only the commit that was checked.
+          gh pr merge "${{ steps.pr.outputs.number }}" --squash --delete-branch \
+            --match-head-commit "${{ steps.pr.outputs.sha }}"
