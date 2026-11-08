@@ -46,7 +46,7 @@ security.pam.services.sddm.rules.auth.u2f = {
 ```
 The order is relative to the `login` rule, as pam.nix recommends, so a nixpkgs renumbering cannot silently move it. If the touch succeeds, `sufficient` ends the auth stack. If it fails because no key is plugged in, the user has no enrollment file, or the touch times out, PAM falls through to the unchanged `login` substack, which checks the password. Account and session stacks are not touched.
 
-The same rule goes on `gdm-password` when the desktop is gnome. This also covers GNOME's lock screen. The rule goes on `sddm` when the desktop is kde or niri-noctalia. Building the rule by hand duplicates what the default u2f rule contains (module path and settings), but nixpkgs offers no switch for services that don't use the default rules.
+The rule goes on the PAM service of whichever display manager is enabled (`config.services.displayManager.sddm.enable` / `gdm.enable`) on a graphical machine, not on the desktop name: `sddm` for kde and niri-noctalia, `gdm-password` for gnome, where it also covers GNOME's lock screen. A machine that switches its display manager in its own modules (e.g. GDM on kde, to get GDM's touch prompt; SDDM's themes don't show PAM info messages) keeps key login. Building the rule by hand duplicates what the default u2f rule contains (module path and settings), but nixpkgs offers no switch for services that don't use the default rules.
 - *Alternative*: enable U2F on `login`. That is one line and covers the DMs and Noctalia automatically, but it also enables U2F on TTY login, which goes against the spec. I'm recording it here in case the decision about TTY login is revisited.
 
 ### D4: KDE lock screen via `security.pam.services.kde.u2f.enable = true`

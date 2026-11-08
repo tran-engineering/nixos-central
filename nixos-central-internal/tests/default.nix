@@ -1344,15 +1344,26 @@ in
     # can't be tested in a VM (no FIDO device emulation).
     u2f-pam =
       let
-        configOf =
-          desktop:
+        configWith =
+          desktop: modules:
           (central.mkHost {
             hostname = "machine";
             user = "alice";
-            inherit desktop;
+            inherit desktop modules;
             disk = "/dev/vda";
             stateVersion = central.release;
           }).config;
+        configOf = desktop: configWith desktop [ ];
+        # A kde machine that switched its login screen to GDM (machine module).
+        kdeWithGdm = configWith "kde" [
+          (
+            { lib, ... }:
+            {
+              services.displayManager.sddm.enable = lib.mkForce false;
+              services.displayManager.gdm.enable = true;
+            }
+          )
+        ];
         graphical = [
           "kde"
           "gnome"
@@ -1364,10 +1375,10 @@ in
         check = cond: msg: lib.assertMsg cond "u2f-pam: ${msg}";
         # The pam_u2f auth line, bound to the fleet-wide origin, comes before the
         # first auth line containing `marker` (the password path).
-        u2fBefore =
-          desktop: svc: marker:
+        u2fBeforeIn =
+          c: desktop: svc: marker:
           let
-            lines = lib.splitString "\n" (pam (configOf desktop) svc);
+            lines = lib.splitString "\n" (pam c svc);
             indexOf =
               pred:
               lib.findFirst (i: pred (builtins.elemAt lines i)) null (lib.range 0 (builtins.length lines - 1));
@@ -1381,6 +1392,7 @@ in
             && u2f < password
             && lib.hasInfix "origin=pam://nixos-central" (builtins.elemAt lines u2f)
           ) "${desktop}: pam.d/${svc} needs pam_u2f (origin pam://nixos-central) before '${marker}'";
+        u2fBefore = desktop: u2fBeforeIn (configOf desktop) desktop;
         withoutU2f =
           desktop:
           let
@@ -1408,6 +1420,10 @@ in
             (u2fBefore "kde" "sddm" "substack login")
             (u2fBefore "niri-noctalia" "sddm" "substack login")
             (u2fBefore "gnome" "gdm-password" "substack login")
+            # The rule follows the enabled display manager, not the desktop.
+            (u2fBeforeIn kdeWithGdm "kde with GDM" "gdm-password" "substack login")
+            (check (!hasU2f kdeWithGdm "sddm") "kde with GDM: pam.d/sddm must not contain pam_u2f")
+            (check (!hasU2f (configOf "kde") "gdm-password") "kde: pam.d/gdm-password must not contain pam_u2f")
             # Lock screens.
             (u2fBefore "kde" "kde" "pam_unix.so")
             (check (!hasU2f (configOf "gnome") "kde") "gnome: pam.d/kde must not contain pam_u2f")

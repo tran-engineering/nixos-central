@@ -7,7 +7,7 @@
 
 ## 2. Display-manager login (SDDM, GDM)
 
-- [x] 2.1 In `u2f.nix`, add the hand-written `u2f` auth rule (`sufficient`, pam_u2f module path, shared settings, order = `rules.auth.login.order - 10`). Add it to `sddm` when the desktop is kde or niri-noctalia, and to `gdm-password` when it is gnome (design D3). Verify by extending `u2f-pam`: for kde and niri-noctalia, `pam.d/sddm` contains `pam_u2f.so` with `origin=pam://nixos-central` on a line before the `substack login` line. For gnome, `pam.d/gdm-password` does the same. The check passes.
+- [x] 2.1 In `u2f.nix`, add the hand-written `u2f` auth rule (`sufficient`, pam_u2f module path, shared settings, order = `rules.auth.login.order - 10`). Add it to `sddm` or `gdm-password`, whichever display manager is enabled on a graphical machine (design D3). Verify by extending `u2f-pam`: for kde and niri-noctalia, `pam.d/sddm` contains `pam_u2f.so` with `origin=pam://nixos-central` on a line before the `substack login` line. For gnome, `pam.d/gdm-password` does the same, and also for a kde machine switched to GDM (whose `pam.d/sddm` then has no pam_u2f). The check passes.
 
 ## 3. Lock screens (KDE, GNOME, Noctalia)
 

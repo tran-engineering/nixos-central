@@ -42,9 +42,11 @@ in
       environment.systemPackages = [ pkgs.pam_u2f ];
     })
 
-    # Login screens. GNOME's lock screen also authenticates via gdm-password.
-    (lib.mkIf (desktop == "kde" || desktop == "niri-noctalia") (u2fBeforeLogin "sddm"))
-    (lib.mkIf (desktop == "gnome") (u2fBeforeLogin "gdm-password"))
+    # Login screens: whichever display manager is actually enabled, so a
+    # machine that switches it (e.g. GDM on kde) keeps key login. GNOME's lock
+    # screen also authenticates via gdm-password.
+    (lib.mkIf (desktop != "none" && config.services.displayManager.sddm.enable) (u2fBeforeLogin "sddm"))
+    (lib.mkIf (desktop != "none" && config.services.displayManager.gdm.enable) (u2fBeforeLogin "gdm-password"))
 
     # KDE's lock screen (kscreenlocker) has its own service with the default
     # rules, where the u2f rule already sits before pam_unix. Only on kde, so
