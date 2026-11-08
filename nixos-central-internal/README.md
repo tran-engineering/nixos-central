@@ -9,6 +9,6 @@ the top level. Personal profiles live in private overlays.
 |---|---|
 | `installer/install.sh` | The `curl … \| sh` installer. Published to GitHub Pages by `.github/workflows/pages.yml`. |
 | `lib/` | `lib.mkHost`, the entry point machine flakes call, and the list of modules every machine gets. `desktop-names.nix` lists the desktops by reading `modules/desktops/`. |
-| `disko/` | Disk layout (GPT, EFI partition, encrypted btrfs) shared by all machines. |
+| `disko/` | Disk layout (GPT, EFI partition, encrypted ext4) shared by all machines. |
 | `templates/host/` | Flake template the installer renders into `/etc/nixos` on a new machine. |
 | `tests/` | VM tests run by `nix flake check`, the stand-in hardware file for CI sample hosts, the test profiles `tests/profiles/` (only CI configurations use them), and `tests/e2e`, a full installer test in QEMU. |

@@ -436,6 +436,8 @@ def phase_installed(args, repo):
     log("installed system: LUKS, login, sudo, facts")
     vm = boot_installed(args)
     check("e2e-host" in vm.succeed("hostname"), "hostname is e2e-host")
+    check(vm.succeed("findmnt -no FSTYPE,SOURCE /").split()[-2:] == ["ext4", "/dev/mapper/cryptroot"], "/ is ext4 on the LUKS device")
+    check(vm.succeed("findmnt -no TARGET -T /home; findmnt -no TARGET -T /nix").split()[-2:] == ["/", "/"], "/home and /nix are on the root filesystem")
     rc, _ = sudo(vm, "true")
     check(rc == 0, "primary user can sudo with the chosen password")
     check("KEYMAP=sg-latin1" in vm.succeed("cat /etc/vconsole.conf"), "chosen keyboard layout active on the console")

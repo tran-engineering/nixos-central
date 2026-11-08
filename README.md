@@ -94,8 +94,7 @@ installer before anything is changed.
      `nixos-central private setup`),
    - asks for one of the overlay's profiles, e.g. a generic `developer` profile
      for any username.
-6. Erases the disk: 1 GiB EFI partition, the rest LUKS-encrypted btrfs
-   (subvolumes `@`, `@home`, `@nix`).
+6. Erases the disk: 1 GiB EFI partition, the rest LUKS-encrypted ext4.
 7. Writes the machine's configuration to `/etc/nixos` (with the overlay and
    profile, exactly as `nixos-central private setup` would) and installs NixOS.
    The key goes to `~/.ssh/id_ed25519` of your user.

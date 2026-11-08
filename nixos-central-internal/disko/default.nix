@@ -1,5 +1,5 @@
 # Disk layout for every nixos-central machine:
-# GPT, 1 GiB EFI system partition, rest LUKS-encrypted btrfs with subvolumes.
+# GPT, 1 GiB EFI system partition, rest LUKS-encrypted ext4.
 # Partitions are mounted by GPT label (disk-main-ESP, disk-main-luks), so the
 # installed system does not depend on the device path.
 { config, ... }:
@@ -30,29 +30,10 @@
             passwordFile = "/tmp/nixos-central-luks.key";
             settings.allowDiscards = true;
             content = {
-              type = "btrfs";
-              extraArgs = [ "-f" ];
-              subvolumes =
-                let
-                  mountOptions = [
-                    "compress=zstd"
-                    "noatime"
-                  ];
-                in
-                {
-                  "@" = {
-                    mountpoint = "/";
-                    inherit mountOptions;
-                  };
-                  "@home" = {
-                    mountpoint = "/home";
-                    inherit mountOptions;
-                  };
-                  "@nix" = {
-                    mountpoint = "/nix";
-                    inherit mountOptions;
-                  };
-                };
+              type = "filesystem";
+              format = "ext4";
+              mountpoint = "/";
+              mountOptions = [ "noatime" ];
             };
           };
         };
