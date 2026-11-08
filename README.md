@@ -229,7 +229,7 @@ To change the desktop or keyboard layout later, edit `desktop` or
 
 | Name | Desktop |
 |---|---|
-| `gnome` | GNOME (Wayland, GDM) |
+| `gnome` | GNOME (Wayland, GDM), with a dock on the left ([Dash to Dock](https://extensions.gnome.org/extension/307/dash-to-dock/); move or turn it off in *Extensions*) |
 | `kde` | KDE Plasma 6 (Wayland, SDDM) |
 | `niri-noctalia` | [niri](https://github.com/YaLTeR/niri) tiling compositor with the [Noctalia](https://github.com/noctalia-dev/noctalia-shell) shell (Wayland, SDDM) |
 | `none` | no graphical desktop, console login |
