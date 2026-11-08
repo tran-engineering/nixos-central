@@ -2,7 +2,7 @@
 
 ## 1. Flatpak with Flathub
 
-- [x] 1.1 Add `modules/base/flatpak.nix` with the internal option `nixos-central.desktopApps.enable` (default `config.nixos-central.desktop != "none"`), `services.flatpak.enable`, the vendored `modules/base/flatpak/flathub.flatpakrepo` (copied from `https://dl.flathub.org/repo/flathub.flatpakrepo`) and the oneshot service running `flatpak remote-add --system --if-not-exists flathub <file>`; import it from `modules/base/default.nix`; verify `nix flake check` evaluates all hosts and that a `none` host has no `services.flatpak.enable`
+- [x] 1.1 Add `modules/base/flatpak.nix` with the internal option `nixos-central.desktopApps.enable` (default `config.nixos-central.desktop != "none"`), `services.flatpak.enable`, the flake input `flathub` (`file+https://dl.flathub.org/repo/flathub.flatpakrepo`, `flake = false`, pinned in `flake.lock`) and the oneshot service running `flatpak remote-add --system --if-not-exists flathub <file>`; import it from `modules/base/default.nix`; verify `nix flake check` evaluates all hosts and that a `none` host has no `services.flatpak.enable`
 - [x] 1.2 Add the `desktop-apps` VM check in `nixos-central-internal/tests/default.nix` with node `machine` (desktop `none`, `desktopApps.enable = true`) and node `plain` (defaults): `flatpak remotes --system` lists `flathub` offline and the service did not fail; on `plain`, `command -v flatpak` fails; verify `nix build .#checks.x86_64-linux.desktop-apps` passes
 
 ## 2. Daily Flatpak updates

@@ -49,10 +49,10 @@
   then need a full desktop in the VM test, which is too heavy for
   `nix flake check`.
 
-### Flathub added from a vendored `.flatpakrepo` file
-The repository ships `flathub.flatpakrepo` (copied from
-`https://dl.flathub.org/repo/flathub.flatpakrepo`; it holds the URL and
-Flathub's GPG key). A system oneshot service, wanted by `multi-user.target`
+### Flathub added from a `.flatpakrepo` file pinned as a flake input
+The flake input `flathub` (`file+https://dl.flathub.org/repo/flathub.flatpakrepo`,
+`flake = false`) puts Flathub's `.flatpakrepo` file, which holds the URL and
+Flathub's GPG key, into the store, pinned by `flake.lock`. A system oneshot service, wanted by `multi-user.target`
 and needing only the local filesystem, runs
 `flatpak remote-add --system --if-not-exists flathub <store path>`.
 
@@ -67,8 +67,16 @@ and needing only the local filesystem, runs
 - *Alternative: static remotes in `/etc/flatpak/remotes.d`.* Not chosen
   because it is less documented and not verified with the nixpkgs flatpak
   version; the service is a well-known pattern.
-- The vendored file changes only if Flathub rotates its key, which would be a
-  visible upstream event.
+- *Alternative: a copy of the file in the repository.* Was the first
+  implementation; replaced by the input so the weekly `flake.lock` update
+  picks up upstream changes (e.g. a rotated key) without a hand-made commit,
+  and the file's origin is recorded in the lock.
+- `--if-not-exists` does not touch an existing remote: a changed file only
+  reaches machines that add the remote for the first time. A key rotation on
+  existing machines would need `flatpak remote-modify` and is left until it
+  happens.
+- Evaluating a machine fetches the file once if it is not in the store (the
+  daily upgrade is online anyway).
 
 ### Daily updates: one system timer, one user timer
 - `flatpak-update.service` (system) runs

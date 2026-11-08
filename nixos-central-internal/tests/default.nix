@@ -268,12 +268,13 @@ in
       '';
     };
 
-    # Flatpak with Flathub, offline (the remote comes from the vendored
-    # .flatpakrepo file), its daily update timers, and the AppImage binfmt
-    # registrations. Installing from Flathub and running a real AppImage need
-    # network and a desktop and are checked by hand. `machine` stands in for a graphical desktop (the switch
-    # set by hand, a portal because Flatpak requires one); `plain` is a
-    # desktop-less machine, which gets none of it.
+    # Flatpak with Flathub, offline (the remote comes from the `flathub`
+    # input, already in the store), its update timers, and the AppImage
+    # binfmt registrations. Installing from Flathub and running a real
+    # AppImage need network and a desktop and are checked by hand. `machine`
+    # stands in for a graphical desktop (the switch set by hand, a portal
+    # because Flatpak requires one); `plain` is a desktop-less machine, which
+    # gets none of it.
     desktop-apps = runTest {
       name = "nixos-central-desktop-apps";
       nodes.machine =

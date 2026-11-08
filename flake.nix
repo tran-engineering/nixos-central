@@ -19,6 +19,13 @@
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.home-manager.follows = "home-manager";
     };
+    # Flathub's remote definition (URL and signing key), added as a Flatpak
+    # remote on graphical machines (modules/base/flatpak.nix). A plain file,
+    # refreshed with the weekly flake.lock update.
+    flathub = {
+      url = "file+https://dl.flathub.org/repo/flathub.flatpakrepo";
+      flake = false;
+    };
   };
 
   outputs =

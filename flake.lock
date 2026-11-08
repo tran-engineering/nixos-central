@@ -20,6 +20,18 @@
         "type": "github"
       }
     },
+    "flathub": {
+      "flake": false,
+      "locked": {
+        "narHash": "sha256-2phZFNY69QqqhsD4Ydp7mg4dpbLNtCi0mlhzbDPsytg=",
+        "type": "file",
+        "url": "https://dl.flathub.org/repo/flathub.flatpakrepo"
+      },
+      "original": {
+        "type": "file",
+        "url": "https://dl.flathub.org/repo/flathub.flatpakrepo"
+      }
+    },
     "home-manager": {
       "inputs": {
         "nixpkgs": [
@@ -99,6 +111,7 @@
     "root": {
       "inputs": {
         "disko": "disko",
+        "flathub": "flathub",
         "home-manager": "home-manager",
         "nixpkgs": "nixpkgs",
         "nixpkgs-unstable": "nixpkgs-unstable",

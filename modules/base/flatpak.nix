@@ -3,7 +3,7 @@
 # `flatpak install flathub <id>` anywhere). Flatpak apps live in
 # /var/lib/flatpak and ~/.local/share/flatpak, outside Nix: they are not part
 # of a generation and not rolled back with one.
-{ config, lib, ... }:
+{ config, inputs, lib, ... }:
 let
   flatpak = config.services.flatpak.package;
 
@@ -45,8 +45,8 @@ in
   config = lib.mkIf config.nixos-central.desktopApps.enable {
     services.flatpak.enable = true;
 
-    # Flathub from a copy of https://dl.flathub.org/repo/flathub.flatpakrepo
-    # (URL and signing key): works offline, so it needs no network at boot.
+    # Flathub from the `flathub` input (https://dl.flathub.org/repo/flathub.flatpakrepo:
+    # URL and signing key), already in the store: needs no network at boot.
     # A removed remote comes back at the next boot.
     systemd.services.flatpak-flathub = {
       description = "Add the Flathub remote to Flatpak";
@@ -57,7 +57,7 @@ in
         RemainAfterExit = true;
       };
       script = ''
-        flatpak remote-add --system --if-not-exists flathub ${./flatpak/flathub.flatpakrepo}
+        flatpak remote-add --system --if-not-exists flathub ${inputs.flathub}
       '';
     };
 
