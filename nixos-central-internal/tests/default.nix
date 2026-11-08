@@ -1339,6 +1339,95 @@ in
       }).config.console.keyMap == "us";
       pkgs.writeText "keyboard-layouts" "ok";
 
+    # Security key login (modules/base/u2f.nix): which generated PAM services
+    # contain pam_u2f, in which order, and which must not. A key touch itself
+    # can't be tested in a VM (no FIDO device emulation).
+    u2f-pam =
+      let
+        configOf =
+          desktop:
+          (central.mkHost {
+            hostname = "machine";
+            user = "alice";
+            inherit desktop;
+            disk = "/dev/vda";
+            stateVersion = central.release;
+          }).config;
+        graphical = [
+          "kde"
+          "gnome"
+          "niri-noctalia"
+        ];
+        # The exact text written to /etc/pam.d/<svc> ("" if the service doesn't exist).
+        pam = c: svc: c.security.pam.services.${svc}.text or "";
+        hasU2f = c: svc: lib.hasInfix "pam_u2f" (pam c svc);
+        check = cond: msg: lib.assertMsg cond "u2f-pam: ${msg}";
+        # The pam_u2f auth line, bound to the fleet-wide origin, comes before the
+        # first auth line containing `marker` (the password path).
+        u2fBefore =
+          desktop: svc: marker:
+          let
+            lines = lib.splitString "\n" (pam (configOf desktop) svc);
+            indexOf =
+              pred:
+              lib.findFirst (i: pred (builtins.elemAt lines i)) null (lib.range 0 (builtins.length lines - 1));
+            isAuth = l: lib.hasPrefix "auth " l;
+            u2f = indexOf (l: isAuth l && lib.hasInfix "pam_u2f.so" l);
+            password = indexOf (l: isAuth l && lib.hasInfix marker l);
+          in
+          check (
+            u2f != null
+            && password != null
+            && u2f < password
+            && lib.hasInfix "origin=pam://nixos-central" (builtins.elemAt lines u2f)
+          ) "${desktop}: pam.d/${svc} needs pam_u2f (origin pam://nixos-central) before '${marker}'";
+        withoutU2f =
+          desktop:
+          let
+            c = configOf desktop;
+          in
+          map (
+            svc:
+            check (pam c svc != "") "${desktop}: pam.d/${svc} missing"
+            && check (!hasU2f c svc) "${desktop}: pam.d/${svc} must not contain pam_u2f"
+          ) [
+            "login"
+            "sudo"
+            "su"
+          ];
+        none = configOf "none";
+        noneU2fServices = lib.filter (hasU2f none) (builtins.attrNames none.security.pam.services);
+        checks =
+          lib.concatMap withoutU2f (graphical ++ [ "none" ])
+          ++ [
+            (check (noneU2fServices == [ ]) "none: pam_u2f in ${toString noneU2fServices}")
+            (check (
+              !builtins.any (p: lib.getName p == "pam_u2f") none.environment.systemPackages
+            ) "none: pamu2fcfg (pam_u2f) must not be installed")
+            # Login screens; GNOME's lock screen also uses gdm-password.
+            (u2fBefore "kde" "sddm" "substack login")
+            (u2fBefore "niri-noctalia" "sddm" "substack login")
+            (u2fBefore "gnome" "gdm-password" "substack login")
+            # Lock screens.
+            (u2fBefore "kde" "kde" "pam_unix.so")
+            (check (!hasU2f (configOf "gnome") "kde") "gnome: pam.d/kde must not contain pam_u2f")
+            (check (!hasU2f (configOf "niri-noctalia") "kde") "niri-noctalia: pam.d/kde must not contain pam_u2f")
+            (u2fBefore "niri-noctalia" "noctalia" "pam_unix.so")
+            (check (
+              (configOf "niri-noctalia").systemd.user.services.noctalia-shell.environment.NOCTALIA_PAM_SERVICE or null
+              == "noctalia"
+            ) "niri-noctalia: noctalia-shell must use the noctalia PAM service")
+            (check (!hasU2f (configOf "kde") "noctalia") "kde: pam.d/noctalia must not exist")
+          ]
+          ++ map (
+            desktop:
+            check (builtins.any (p: lib.getName p == "pam_u2f") (configOf desktop).environment.systemPackages)
+              "${desktop}: pamu2fcfg (pam_u2f) must be installed"
+          ) graphical;
+      in
+      assert builtins.all (x: x) checks;
+      pkgs.writeText "u2f-pam" "ok";
+
     reboot-notify = rebootNotify { desktop = "none"; };
   };
 

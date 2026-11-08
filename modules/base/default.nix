@@ -11,6 +11,7 @@
     ./gc.nix
     ./reboot-notify.nix
     ./try.nix
+    ./u2f.nix
     ./upgrade.nix
     ./diff.nix
     ./private.nix

@@ -261,6 +261,49 @@ A new desktop is a new file `modules/desktops/<name>.nix`, enabled with
 `lib.mkIf (config.nixos-central.desktop == "<name>")`. Sound, Bluetooth and
 printing for every graphical desktop come from `modules/base/graphical.nix`.
 
+## Signing in with a security key (YubiKey)
+
+On every graphical desktop you can log in and unlock the screen by touching a
+FIDO2/U2F security key (e.g. a YubiKey) **instead of typing your password**.
+The password keeps working everywhere, with or without the key. Console (TTY)
+login and `sudo` always ask for the password. Machines with desktop `none`
+don't support keys.
+
+Enroll a key once (plug it in, run this, touch the key when it blinks):
+
+```sh
+mkdir -p ~/.config/Yubico
+pamu2fcfg -o pam://nixos-central -i pam://nixos-central > ~/.config/Yubico/u2f_keys
+```
+
+It works right away, no rebuild needed. Keep the `-o … -i …` part: it binds
+the key to all nixos-central machines rather than to this one.
+
+- **Backup key**: plug in the second key and add it to the same file
+  (note `-n` and `>>`):
+
+  ```sh
+  pamu2fcfg -n -o pam://nixos-central -i pam://nixos-central >> ~/.config/Yubico/u2f_keys
+  ```
+- **Your other machines**: copy `~/.config/Yubico/u2f_keys` to the same place
+  there; no need to enroll again.
+- **Lost key**: the file has one line, `<user>:<key>:<key>…`, with no way to
+  tell the keys apart, so create it again with the keys you still have (the
+  enrollment command above, then the backup command for each further key).
+  Removing the file turns key login off entirely.
+
+Where the key works:
+
+| Desktop | Login screen | Lock screen |
+|---|---|---|
+| `kde` | SDDM: leave the password empty, press Enter, touch the key | same |
+| `gnome` | GDM: choose your account, touch the key when asked | same |
+| `niri-noctalia` | SDDM: leave the password empty, press Enter, touch the key | Noctalia: same |
+
+**Security note:** whoever holds an enrolled key can unlock your graphical
+session without your password; no PIN is asked. Keep the key with you, and
+remove a lost key from the file on every machine.
+
 ## Users and profiles
 
 The primary user's environment is built with [home-manager](https://github.com/nix-community/home-manager)
@@ -640,3 +683,6 @@ the first login into a fresh home.
 offline and the AppImage registration, on a machine without desktop and with
 the switch set by hand; installing from Flathub and the app stores need
 network and are checked by hand.
+`u2f-pam` checks which generated PAM services accept a security key (login
+and lock screens) and which must not (`login`, `sudo`, `su`, desktop `none`);
+signing in with a real key is checked by hand.
