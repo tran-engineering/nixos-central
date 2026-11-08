@@ -13,7 +13,7 @@
 ## 3. Publishing
 
 - [ ] 3.1 Add `.github/workflows/iso.yml` (dispatch, monthly, pushes touching the image definition): build, 2 GiB size check, `.sha256`, release `iso-<date>` with fixed asset names marked latest, and pruning to the newest three image releases; verify a manual run on a branch publishes a release whose `.sha256` matches the downloaded file
-- [ ] 3.2 Point `install.sh`'s "boot the installation image" messages to the latest-image URL; verify with shellcheck and the e2e "not a live image" and BIOS cases
+- [x] 3.2 Point `install.sh`'s "boot the installation image" messages to the latest-image URL; verify with shellcheck and the e2e "not a live image" and BIOS cases
 
 ## 4. Documentation
 
