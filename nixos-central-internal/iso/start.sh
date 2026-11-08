@@ -19,16 +19,37 @@ ask() {
 
 online() { curl -sfI --max-time 10 https://github.com >/dev/null; }
 
+# On a cable, tty1 often logs in while DHCP is still running. Keep checking
+# for up to 30 s while NetworkManager is starting or bringing up a connection.
+# Give up early once it has started and is neither connecting nor connected
+# (e.g. "networking off" or "disconnected" on a machine without cable), so the
+# Wi-Fi offer is not delayed there.
+wait_for_network() {
+  local i
+  for i in $(seq 30); do
+    online && return 0
+    # STARTUP:STATE, e.g. "starting:connecting" or "started:networking off".
+    case "$(nmcli -t -f STARTUP,STATE general 2>/dev/null)" in
+    starting:* | *:connecting* | *:connected*) ;; # may still come up
+    *) return 1 ;;
+    esac
+    [ "$i" -eq 2 ] && echo "Waiting for the network ..."
+    sleep 1
+  done
+  return 1
+}
+
 hint() {
   printf '\nTo start the installer later, run: nixos-central-start\n'
 }
 
 printf '\nWelcome to the nixos-central installation image.\n\n'
 
-until online; do
+until wait_for_network; do
   echo "No connection to github.com."
   if ask "Set up the network now (Wi-Fi: choose 'Activate a connection')?"; then
     nmtui || true
+    echo "Checking the connection ..."
   else
     hint
     exit 0

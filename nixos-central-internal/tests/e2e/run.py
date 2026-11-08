@@ -320,8 +320,16 @@ def phase_install(args, repo):
 
     log("installation image: nixos-central-start (only on tty1 by itself, so run it here)")
     start = f"NIXOS_CENTRAL_FLAKE={CENTRAL_URL} nixos-central-start"
-    vm.send(start)
+    vm.send(f"sudo nmcli networking off; {start}")
+    t0 = time.time()
+    vm.answer(r"No connection to github\.com\.\r*\n.*Set up the network now.*\[Y/n\]: ", "n", 120)
+    check(time.time() - t0 < 20, "no network: network setup offered without waiting out the DHCP grace period")
+    vm.expect(r"To start the installer later, run: nixos-central-start")
+    vm.expect(SHELL_PROMPT)
+    # As on a cable right after boot: DHCP still running when the script starts.
+    vm.send(f"sudo nmcli networking on; {start}")
     vm.answer(r"Install nixos-central on this computer\? \[Y/n\]: ", "n", 120)
+    check("No connection" not in vm.p.before, "network coming up: waited for it instead of offering network setup")
     vm.expect(r"To start the installer later, run: nixos-central-start")
     vm.expect(SHELL_PROMPT)
     check("EMPTY" in vm.succeed("sudo blkid /dev/vda || echo EMPTY"), "declined start: shell, nothing installed")

@@ -40,6 +40,8 @@ A `nixos-central-start` script runs from the login shell of `nixos` on `/dev/tty
                      nix run "$CENTRAL#installer"      shell (hint: run nixos-central-start)
 ```
 
+"GitHub reachable?" waits up to 30 s while NetworkManager is starting, connecting or connected, because tty1 logs in automatically while DHCP on a cable may still be running. Checking only once offered Wi-Fi setup to machines on a cable. When NetworkManager has started and is idle (no cable, networking off), the offer comes at once.
+
 `CENTRAL` defaults to `github:tran-engineering/nixos-central` and honors `NIXOS_CENTRAL_FLAKE`, as `install.sh` does, so tests and branches can point elsewhere. `--refresh` makes sure a repeat attempt gets the newest default branch. Running the flake's `installer` package instead of `curl` from Pages removes the Pages dependency for the image. The script `install.sh` is the same either way, so behavior matches the curl path.
 
 *Alternative:* run the installer copy baked into the image. Rejected: it ties every image to the installer of its build day, while the configuration it installs always comes from the default branch. A baked fallback adds little, because without GitHub the installation can't proceed anyway.
