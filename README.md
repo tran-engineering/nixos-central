@@ -475,6 +475,39 @@ error. Fix access, or take the overlay out with `nixos-central private remove`.
 Losing a machine means its key can read the repository: remove that key from
 your GitHub account.
 
+## Installing apps
+
+Apps you want on every machine belong in your profile (`home.packages`), so
+they come from nixpkgs and follow the updates and rollbacks below. For apps
+that nixpkgs lacks, or to try something on one machine, every graphical
+desktop (all except `none`) also has:
+
+- **Flatpak with [Flathub](https://flathub.org)**, already set up:
+  - KDE: Discover, GNOME: GNOME Software (*Software*); search and install.
+  - Any desktop, in a terminal:
+
+    ```sh
+    flatpak search spotify
+    flatpak install flathub com.spotify.Client   # asks for your password (all users)
+    flatpak install --user flathub com.spotify.Client   # only for you, no password
+    flatpak uninstall com.spotify.Client
+    ```
+
+  Installed apps appear in the application launcher (after logging in again,
+  the first time). They are **updated automatically** a few minutes after each start
+  (and, for `--user` installs, after logging in) and then every day, separately
+  from the system update and without a reboot. To keep an app at its version,
+  `sudo flatpak mask com.spotify.Client` (`flatpak mask --user …` for a
+  `--user` install; undo with `--remove`).
+
+  Flatpak apps are outside Nix: they exist only on the machine you installed
+  them on, stay as they are when you boot an older generation, and don't show
+  up in `nixos-central diff`. Their data is in `/var/lib/flatpak` (or
+  `~/.local/share/flatpak` for `--user`).
+- **AppImages** run directly: make the downloaded file executable
+  (`chmod +x App.AppImage`, or in the file manager's properties) and start it
+  with `./App.AppImage` or a double-click.
+
 ## The nixos-central command
 
 Everything you do by hand with a machine or a standalone home goes through one
@@ -552,7 +585,7 @@ you, because a firmware update often needs a reboot and can't be undone by
 choosing an older generation. Keep laptops on power while updating.
 
 - KDE: Discover lists firmware updates next to the others.
-- GNOME: the *Firmware* app.
+- GNOME: GNOME Software (*Software*, Updates tab) or the *Firmware* app.
 - Any desktop, in a terminal:
 
   ```sh
@@ -603,3 +636,7 @@ The update notification is tested headless with a stub notification server
 `-niri-noctalia` check it in a real desktop session and are run by hand, as CI
 runs only `nix flake check`. The niri test also checks that Noctalia loads on
 the first login into a fresh home.
+`desktop-apps` checks Flatpak, the Flathub remote and the update timers
+offline and the AppImage registration, on a machine without desktop and with
+the switch set by hand; installing from Flathub and the app stores need
+network and are checked by hand.

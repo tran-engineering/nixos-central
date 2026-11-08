@@ -2,9 +2,11 @@
 { config, inputs, ... }:
 {
   imports = [
+    ./appimage.nix
     ./auto-upgrade.nix
     ./command.nix
     ./docker.nix
+    ./flatpak.nix
     ./fwupd.nix
     ./gc.nix
     ./reboot-notify.nix

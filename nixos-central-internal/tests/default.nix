@@ -268,6 +268,64 @@ in
       '';
     };
 
+    # Flatpak with Flathub, offline (the remote comes from the vendored
+    # .flatpakrepo file), its daily update timers, and the AppImage binfmt
+    # registrations. Installing from Flathub and running a real AppImage need
+    # network and a desktop and are checked by hand. `machine` stands in for a graphical desktop (the switch
+    # set by hand, a portal because Flatpak requires one); `plain` is a
+    # desktop-less machine, which gets none of it.
+    desktop-apps = runTest {
+      name = "nixos-central-desktop-apps";
+      nodes.machine =
+        { pkgs, ... }:
+        {
+          imports = [ (testHost { desktop = "none"; }) ];
+          nixos-central.desktopApps.enable = true;
+          xdg.portal = {
+            enable = true;
+            extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
+            config.common.default = "*";
+          };
+        };
+      nodes.plain = {
+        imports = [ (testHost { desktop = "none"; }) ];
+      };
+      testScript = ''
+        start_all()
+        machine.wait_for_unit("multi-user.target")
+        machine.wait_for_unit("flatpak-flathub.service")
+        machine.succeed("flatpak remotes --system --columns=name | grep -x flathub")
+        machine.succeed("su - alice -c 'flatpak remotes --columns=name' | grep -x flathub")
+
+        # Updates daily and once after each start of the service manager: system
+        # timer, and the user timer in alice's manager.
+        machine.succeed("systemctl is-enabled flatpak-update.timer")
+        machine.succeed("systemctl is-active flatpak-update.timer")
+        machine.succeed("systemctl show -p TimersMonotonic flatpak-update.timer | grep OnStartupUSec")
+        machine.succeed("loginctl enable-linger alice")
+        machine.wait_for_unit("user@1000.service")
+        machine.succeed("systemctl --user -M alice@ is-enabled flatpak-update.timer")
+        machine.succeed("systemctl --user -M alice@ is-active flatpak-update.timer")
+        machine.succeed("systemctl --user -M alice@ show -p TimersMonotonic flatpak-update.timer | grep OnStartupUSec")
+
+        # An offline run may fail, but leaves the installation usable.
+        status, out = machine.execute("systemctl start flatpak-update.service")
+        print(f"offline flatpak update: exit {status}")
+        machine.succeed("flatpak list --system")
+        machine.succeed("flatpak remotes --system --columns=name | grep -x flathub")
+
+        # AppImages of both types are handed to appimage-run.
+        for kind in ("appimage_type_1", "appimage_type_2"):
+            machine.succeed(f"grep -x enabled /proc/sys/fs/binfmt_misc/{kind}")
+            machine.succeed(f"grep -x 'interpreter /run/binfmt/{kind}' /proc/sys/fs/binfmt_misc/{kind}")
+            machine.succeed(f"readlink /run/binfmt/{kind} | grep '/bin/appimage-run$'")
+
+        plain.wait_for_unit("multi-user.target")
+        plain.fail("command -v flatpak")
+        plain.fail("ls /proc/sys/fs/binfmt_misc/ | grep -i appimage")
+      '';
+    };
+
     # The nixos-central command with stub subcommands: help, dispatch, errors,
     # menu entries, and the generated completions (syntax; bash and fish run).
     # The menu itself (gum) needs a terminal and is checked by hand.
