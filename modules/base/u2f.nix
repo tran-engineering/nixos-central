@@ -11,21 +11,6 @@
 let
   inherit (config.nixos-central) desktop;
   origin = "pam://nixos-central";
-
-  # SDDM and gdm-password don't use the default rules (their whole auth stack
-  # is `substack login`), so u2f.enable has no effect on them. This is the
-  # default u2f rule of pam.nix written out, placed before the substack: a
-  # touch ends the auth stack (sufficient); no key, no enrollment or a timeout
-  # fall through to the unchanged login substack, i.e. the password. The order
-  # is relative to the login rule, so evaluation fails if nixpkgs drops it.
-  u2fBeforeLogin = service: {
-    security.pam.services.${service}.rules.auth.u2f = {
-      control = "sufficient";
-      modulePath = "${pkgs.pam_u2f}/lib/security/pam_u2f.so";
-      order = config.security.pam.services.${service}.rules.auth.login.order - 10;
-      inherit (config.security.pam.u2f) settings;
-    };
-  };
 in
 {
   config = lib.mkMerge [
@@ -40,13 +25,22 @@ in
 
       # pamu2fcfg for enrollment (the global switch would add it otherwise).
       environment.systemPackages = [ pkgs.pam_u2f ];
-    })
 
-    # Login screens: whichever display manager is actually enabled, so a
-    # machine that switches it (e.g. GDM on kde) keeps key login. GNOME's lock
-    # screen also authenticates via gdm-password.
-    (lib.mkIf (desktop != "none" && config.services.displayManager.sddm.enable) (u2fBeforeLogin "sddm"))
-    (lib.mkIf (desktop != "none" && config.services.displayManager.gdm.enable) (u2fBeforeLogin "gdm-password"))
+      # The GDM login screen of every desktop (modules/base/graphical.nix);
+      # GNOME's lock screen authenticates through it too. gdm-password doesn't
+      # use the default rules (its whole auth stack is `substack login`), so
+      # u2f.enable has no effect on it. This is the default u2f rule of pam.nix
+      # written out, placed before the substack: a touch ends the auth stack
+      # (sufficient); no key, no enrollment or a timeout fall through to the
+      # unchanged login substack, i.e. the password. The order is relative to
+      # the login rule, so evaluation fails if nixpkgs drops it.
+      security.pam.services.gdm-password.rules.auth.u2f = {
+        control = "sufficient";
+        modulePath = "${pkgs.pam_u2f}/lib/security/pam_u2f.so";
+        order = config.security.pam.services.gdm-password.rules.auth.login.order - 10;
+        inherit (config.security.pam.u2f) settings;
+      };
+    })
 
     # KDE's lock screen (kscreenlocker) has its own service with the default
     # rules, where the u2f rule already sits before pam_unix. Only on kde, so

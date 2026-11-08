@@ -229,14 +229,20 @@ To change the desktop or keyboard layout later, edit `desktop` or
 
 | Name | Desktop |
 |---|---|
-| `gnome` | GNOME (Wayland, GDM), with a dock on the left ([Dash to Dock](https://extensions.gnome.org/extension/307/dash-to-dock/); move or turn it off in *Extensions*) |
-| `kde` | KDE Plasma 6 (Wayland, SDDM) |
-| `niri-noctalia` | [niri](https://github.com/YaLTeR/niri) tiling compositor with the [Noctalia](https://github.com/noctalia-dev/noctalia-shell) shell (Wayland, SDDM) |
+| `gnome` | GNOME (Wayland), with a dock on the left ([Dash to Dock](https://extensions.gnome.org/extension/307/dash-to-dock/); move or turn it off in *Extensions*) |
+| `kde` | KDE Plasma 6 (Wayland) |
+| `niri-noctalia` | [niri](https://github.com/YaLTeR/niri) tiling compositor with the [Noctalia](https://github.com/noctalia-dev/noctalia-shell) shell (Wayland) |
 | `none` | no graphical desktop, console login |
 
-SDDM uses the [Catppuccin](https://github.com/catppuccin/sddm) Mocha theme.
-To use another one, set `services.displayManager.sddm.theme` in your machine
-or private config.
+Every desktop logs in through GDM, which can start any of them (the session
+menu at the bottom right of the password field). It shows the prompts of
+[security keys](#signing-in-with-a-security-key-yubikey). Left at the login
+screen, GDM suspends the computer after about 20 minutes; to prevent that on a
+machine (e.g. one you reach over SSH after a reboot), add to its `modules`:
+
+```nix
+{ services.displayManager.gdm.autoSuspend = false; }
+```
 
 On `niri-noctalia`, the main keys are:
 
@@ -258,8 +264,9 @@ xdg.configFile."niri/config.kdl".source = ./niri.kdl;
 ```
 
 A new desktop is a new file `modules/desktops/<name>.nix`, enabled with
-`lib.mkIf (config.nixos-central.desktop == "<name>")`. Sound, Bluetooth and
-printing for every graphical desktop come from `modules/base/graphical.nix`.
+`lib.mkIf (config.nixos-central.desktop == "<name>")`. The GDM login screen,
+sound, Bluetooth and printing for every graphical desktop come from
+`modules/base/graphical.nix`.
 
 ## Signing in with a security key (YubiKey)
 
@@ -296,9 +303,14 @@ Where the key works:
 
 | Desktop | Login screen | Lock screen |
 |---|---|---|
-| `kde` | SDDM: leave the password empty, press Enter, touch the key | same |
+| `kde` | GDM: choose your account, touch the key when asked | touch the key, then click *Unlock* |
 | `gnome` | GDM: choose your account, touch the key when asked | same |
-| `niri-noctalia` | SDDM: leave the password empty, press Enter, touch the key | Noctalia: same |
+| `niri-noctalia` | GDM: choose your account, touch the key when asked | Noctalia: leave the password empty, press Enter, touch the key |
+
+Touch the key only when asked: a YubiKey touched at other times types a
+one-time code into the focused field (the random characters you may see). If
+you don't use that code, turn it off on the key with
+`ykman config usb --disable OTP` (package `yubikey-manager`).
 
 **Security note:** whoever holds an enrolled key can unlock your graphical
 session without your password; no PIN is asked. Keep the key with you, and

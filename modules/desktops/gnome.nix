@@ -1,4 +1,4 @@
-# GNOME on Wayland with GDM.
+# GNOME on Wayland (login screen: GDM, modules/base/graphical.nix).
 { config, lib, pkgs, ... }:
 let
   dashToDock = pkgs.gnomeExtensions.dash-to-dock;
@@ -6,7 +6,6 @@ in
 {
   config = lib.mkIf (config.nixos-central.desktop == "gnome") {
     services.desktopManager.gnome.enable = true;
-    services.displayManager.gdm.enable = true;
 
     environment.systemPackages = [
       # Firmware updates (modules/base/fwupd.nix) in a window. GNOME Software

@@ -5,7 +5,7 @@
 See proposal.md (Why) and specs/security-key-login/spec.md for the required behavior. The facts below about the pinned nixpkgs (nixos-26.05) and Noctalia shape the approach:
 
 - **Turning U2F on globally reaches every service.** `security.pam.services.<name>.u2f.enable` defaults to `config.security.pam.u2f.enable`. Setting the global switch would therefore add pam_u2f to every PAM service, including `login` (TTY) and `sudo`, which the spec excludes. The generated `u2f` rule takes its settings from `security.pam.u2f.settings` whether or not the global switch is on.
-- **SDDM and GDM have no auth rules of their own.** Both `sddm` and `gdm-password` set `useDefaultRules = false`. Their whole auth stack is a single `substack login` rule. Enabling `u2f.enable` on them would do nothing, and enabling it on `login` would also cover TTY login. GNOME's lock screen authenticates through `gdm-password` as well.
+- **GDM's login service has no auth rules of its own.** `gdm-password` (GDM is the login screen of every desktop since `use-gdm-login`) sets `useDefaultRules = false`. Its whole auth stack is a single `substack login` rule. Enabling `u2f.enable` on it would do nothing, and enabling it on `login` would also cover TTY login. GNOME's lock screen authenticates through `gdm-password` as well.
 - **KDE's lock screen has its own service.** The `kde` service (kscreenlocker) uses the default rules, so `u2f.enable` works there directly. In the default rule list the u2f rule comes before pam_unix.
 - **Noctalia's lock screen uses `login` unless told otherwise.** It reads the PAM service name from `NOCTALIA_PAM_SERVICE` and otherwise probes `/etc/pam.d/login` first, so on NixOS it uses `login`.
 - **Existing module patterns.** Base modules gate desktop-dependent configuration on `config.nixos-central.desktop` (see `modules/base/graphical.nix`). Noctalia runs as `systemd.user.services.noctalia-shell`, defined in `modules/desktops/niri-noctalia.nix`.
@@ -34,19 +34,19 @@ The module is imported from `modules/base/default.nix`. All its configuration si
 - `security.pam.u2f.control` stays `sufficient`.
 - The global switch normally adds `pkgs.pam_u2f` to `environment.systemPackages`. With it off, the module adds the package itself so that `pamu2fcfg` is available.
 
-### D3: SDDM and `gdm-password` get an explicit `u2f` auth rule before the `login` substack
+### D3: `gdm-password` gets an explicit `u2f` auth rule before the `login` substack
 For example:
 ```nix
-security.pam.services.sddm.rules.auth.u2f = {
+security.pam.services.gdm-password.rules.auth.u2f = {
   control = "sufficient";
   modulePath = "${pkgs.pam_u2f}/lib/security/pam_u2f.so";
-  order = config.security.pam.services.sddm.rules.auth.login.order - 10;
+  order = config.security.pam.services.gdm-password.rules.auth.login.order - 10;
   settings = config.security.pam.u2f.settings;
 };
 ```
 The order is relative to the `login` rule, as pam.nix recommends, so a nixpkgs renumbering cannot silently move it. If the touch succeeds, `sufficient` ends the auth stack. If it fails because no key is plugged in, the user has no enrollment file, or the touch times out, PAM falls through to the unchanged `login` substack, which checks the password. Account and session stacks are not touched.
 
-The rule goes on the PAM service of whichever display manager is enabled (`config.services.displayManager.sddm.enable` / `gdm.enable`) on a graphical machine, not on the desktop name: `sddm` for kde and niri-noctalia, `gdm-password` for gnome, where it also covers GNOME's lock screen. A machine that switches its display manager in its own modules (e.g. GDM on kde, to get GDM's touch prompt; SDDM's themes don't show PAM info messages) keeps key login. Building the rule by hand duplicates what the default u2f rule contains (module path and settings), but nixpkgs offers no switch for services that don't use the default rules.
+The rule goes on `gdm-password` on every graphical desktop; on gnome it also covers GNOME's lock screen. Building the rule by hand duplicates what the default u2f rule contains (module path and settings), but nixpkgs offers no switch for services that don't use the default rules.
 - *Alternative*: enable U2F on `login`. That is one line and covers the DMs and Noctalia automatically, but it also enables U2F on TTY login, which goes against the spec. I'm recording it here in case the decision about TTY login is revisited.
 
 ### D4: KDE lock screen via `security.pam.services.kde.u2f.enable = true`
@@ -62,9 +62,9 @@ pam_u2f binds credentials to the origin, which defaults to `pam://<hostname>`. A
 The enrollment command documented in the README must pass `-o pam://nixos-central -i pam://nixos-central`. A plain `pamu2fcfg` would use the hostname origin and produce credentials that don't match.
 
 ### D7: Tests as evaluation checks on the generated `/etc/pam.d` text
-The checks go in `nixos-central-internal/tests/default.nix`. They evaluate hosts via `testHost` or `central.hostModules` and assert on `config.environment.etc."pam.d/<svc>".text`:
-- kde: `sddm` and `kde` contain `pam_u2f.so`. In `sddm`, the u2f line comes before the `login` substack.
-- gnome: `gdm-password` contains `pam_u2f.so`, ahead of the substack.
+The checks go in `nixos-central-internal/tests/default.nix`. They evaluate hosts via `testHost` or `central.hostModules` and assert on `config.security.pam.services.<svc>.text`, the exact text written to `/etc/pam.d/<svc>` (`environment.etc."pam.d/<svc>".text` is null in this nixpkgs):
+- every graphical desktop: `gdm-password` contains `pam_u2f.so`, ahead of the `login` substack.
+- kde: `kde` contains `pam_u2f.so` before `pam_unix.so`.
 - niri-noctalia: `noctalia` contains `pam_u2f.so`, and the `noctalia-shell` user service has `NOCTALIA_PAM_SERVICE=noctalia`.
 - All four desktops: `login`, `sudo` and `su` do not contain `pam_u2f`.
 - none: no `pam.d` file contains `pam_u2f`.
@@ -74,7 +74,7 @@ A VM boot test can't exercise a key touch, because the NixOS test framework has 
 
 ## Risks / Trade-offs
 
-- **[Prompt order]** SDDM and kscreenlocker start PAM only after the user submits the password field. To use the key, the user leaves the field empty, presses Enter, and then touches the key when the cue appears. GDM shows the cue on its own. → The README explains this per desktop. Hardware verification confirms the actual behavior.
+- **[Prompt order]** GDM starts PAM when the account is picked and shows the cue. KDE's lock screen accepts the touch in the background but unlocks only after *Unlock* is clicked (seen on hardware). Noctalia's lock screen likely needs an empty field and Enter first. (SDDM started PAM only after Enter and showed no cue, which led to `use-gdm-login`.) → The README explains this per desktop. Hardware verification confirms the actual behavior.
 - **[Delay when the key is enrolled but unplugged]** pam_u2f fails fast when no device is present, so the password path is not slowed down. → Verified by hand: password login with the key unplugged must not be noticeably slower.
 - **[Stolen key unlocks the session]** This was accepted by the user (no PIN). → The README describes the trade-off and how to remove a key. Upgrading to `pinverification` later requires re-enrolling with `-N`.
 - **[nixpkgs changes the DM PAM stacks]** For example, the `login` rule could be renamed or the DMs could switch to default rules. → The evaluation fails loudly if `rules.auth.login` disappears, because the order expression references it. The order checks in D7 catch silent reordering.

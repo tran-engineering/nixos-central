@@ -23,7 +23,7 @@ init_globals() {
   LUKS_KEY=/tmp/nixos-central-luks.key # must match nixos-central-internal/disko/default.nix
   SSH_DIR=/tmp/nixos-central-ssh # the primary user's new SSH key, until it is installed
   MIN_DISK_BYTES=$((40 * 1024 * 1024 * 1024))
-  RESERVED_USERS=" root bin daemon nobody nogroup nixbld messagebus polkituser sddm sshd systemd-network
+  RESERVED_USERS=" root bin daemon nobody nogroup nixbld messagebus polkituser gdm flatpak sshd systemd-network
     systemd-resolve systemd-timesync systemd-oom systemd-coredump rtkit avahi geoclue pipewire
     nm-openvpn nm-iodine fwupd-refresh cups lp colord wheel users admin nixos "
 

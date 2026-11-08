@@ -1,4 +1,5 @@
-# niri (scrollable-tiling Wayland compositor) with the Noctalia shell, SDDM login.
+# niri (scrollable-tiling Wayland compositor) with the Noctalia shell (login screen: GDM,
+# modules/base/graphical.nix, which also unlocks niri's gnome-keyring).
 # Noctalia runs as a systemd user service in every graphical session, so it
 # also starts with a user's own niri config. The default niri config lives in
 # ./niri-noctalia/config.kdl and is installed as /etc/niri/config.kdl, which
@@ -17,11 +18,6 @@ let
   niriConfig = pkgs.runCommand "niri-config.kdl" { nativeBuildInputs = [ niri ]; } ''
     niri validate -c ${./niri-noctalia/config.kdl}
     cp ${./niri-noctalia/config.kdl} $out
-  '';
-
-  greeterConfig = pkgs.runCommand "niri-sddm-greeter.kdl" { nativeBuildInputs = [ niri ]; } ''
-    niri validate -c ${./niri-noctalia/sddm-greeter.kdl}
-    cp ${./niri-noctalia/sddm-greeter.kdl} $out
   '';
 
   # Started with and stopped with the graphical session.
@@ -44,21 +40,7 @@ in
     programs.niri.enable = true;
     environment.etc."niri/config.kdl".source = niriConfig;
 
-    services.displayManager = {
-      sddm = {
-        enable = true;
-        # Under the default Weston kiosk compositor the greeter shows no mouse
-        # cursor: the Qt greeter never sets one and Weston draws none for it.
-        # niri (already installed) draws its own cursor.
-        wayland = {
-          enable = true;
-          compositorCommand = "${lib.getExe niri} -c ${greeterConfig}";
-        };
-      };
-      defaultSession = "niri";
-    };
-    # The niri module enables gnome-keyring; unlock it with the login password.
-    security.pam.services.sddm.enableGnomeKeyring = true;
+    services.displayManager.defaultSession = "niri";
 
     systemd.user.services.noctalia-shell = lib.recursiveUpdate (sessionService "Noctalia shell" (lib.getExe noctalia)) {
       # Noctalia 4.7.6 creates these asynchronously on first start and then

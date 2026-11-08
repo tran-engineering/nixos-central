@@ -5,9 +5,9 @@
 - [x] 1.1 Create `modules/base/u2f.nix` and import it from `modules/base/default.nix`. Under `lib.mkIf (desktop != "none")`, set `security.pam.u2f.settings` (`origin`/`appid` = `pam://nixos-central`, `cue = true`) and add `pkgs.pam_u2f` to `environment.systemPackages`. Leave `security.pam.u2f.enable` unset (design D2). Verify that `nix build .#checks.x86_64-linux.host-ci-kde` and `host-ci-none` still build.
 - [x] 1.2 Add an evaluation check `u2f-pam` to `nixos-central-internal/tests/default.nix`. For hosts with each of the four desktops, assert that `environment.etc."pam.d/login".text`, `pam.d/sudo` and `pam.d/su` do not contain `pam_u2f`. On the `none` host, assert that no `pam.d/*` entry contains `pam_u2f` and that `pamu2fcfg` is not in the system path. Verify with `nix build .#checks.x86_64-linux.u2f-pam`.
 
-## 2. Display-manager login (SDDM, GDM)
+## 2. Display-manager login (GDM)
 
-- [x] 2.1 In `u2f.nix`, add the hand-written `u2f` auth rule (`sufficient`, pam_u2f module path, shared settings, order = `rules.auth.login.order - 10`). Add it to `sddm` or `gdm-password`, whichever display manager is enabled on a graphical machine (design D3). Verify by extending `u2f-pam`: for kde and niri-noctalia, `pam.d/sddm` contains `pam_u2f.so` with `origin=pam://nixos-central` on a line before the `substack login` line. For gnome, `pam.d/gdm-password` does the same, and also for a kde machine switched to GDM (whose `pam.d/sddm` then has no pam_u2f). The check passes.
+- [x] 2.1 In `u2f.nix`, add the hand-written `u2f` auth rule (`sufficient`, pam_u2f module path, shared settings, order = `rules.auth.login.order - 10`). Add it to `gdm-password` on every graphical desktop (design D3). Verify by extending `u2f-pam`: on kde, gnome and niri-noctalia, `pam.d/gdm-password` contains `pam_u2f.so` with `origin=pam://nixos-central` on a line before the `substack login` line. The check passes.
 
 ## 3. Lock screens (KDE, GNOME, Noctalia)
 
@@ -21,7 +21,7 @@
   - adding a backup key with `-n` and `>>`
   - copying the file to the user's other machines
   - removing a lost key
-  - per desktop, where the key works and how to trigger it (empty field + Enter on SDDM and the KDE lock screen)
+  - per desktop, where the key works and how to trigger it (GDM: pick the account and touch; KDE lock screen: touch, then *Unlock*; Noctalia lock screen: empty field + Enter)
   - that TTY login and `sudo` stay password-only
   - the security note that whoever holds the key can unlock the session
 

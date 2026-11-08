@@ -10,7 +10,7 @@ Lets users of graphical nixos-central machines sign in and unlock their session 
 On every machine with a graphical desktop, the display manager's login screen SHALL accept a touch of a security key enrolled for the user as an alternative to the user's password.
 
 #### Scenario: KDE login with an enrolled key
-- **WHEN** a user with an enrolled key selects their account on the SDDM login screen of a KDE machine, with the key plugged in, and touches the key when prompted
+- **WHEN** a user with an enrolled key selects their account on the GDM login screen of a KDE machine, with the key plugged in, and touches the key when prompted
 - **THEN** the session starts without the password being typed
 
 #### Scenario: GNOME login with an enrolled key
@@ -18,7 +18,7 @@ On every machine with a graphical desktop, the display manager's login screen SH
 - **THEN** the session starts without the password being typed
 
 #### Scenario: niri-noctalia login with an enrolled key
-- **WHEN** a user with an enrolled key logs in on the SDDM login screen of a niri-noctalia machine, with the key plugged in, and touches the key when prompted
+- **WHEN** a user with an enrolled key selects their account on the GDM login screen of a niri-noctalia machine, with the key plugged in, and touches the key when prompted
 - **THEN** the session starts without the password being typed
 
 ### Requirement: Security key at the lock screen

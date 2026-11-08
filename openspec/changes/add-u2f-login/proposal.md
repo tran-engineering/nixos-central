@@ -7,9 +7,11 @@ Users of nixos-central machines who own a FIDO2/U2F security key (e.g. a YubiKey
 ## What Changes
 
 - Every NixOS machine supports signing in with a U2F/FIDO2 security key **as an alternative to the password**. The key is accepted at the graphical login screen and at the lock screen of each desktop:
-  - KDE: SDDM login and the KDE lock screen
+  - KDE: GDM login and the KDE lock screen
   - GNOME: GDM login and the GNOME lock screen
-  - niri-noctalia: SDDM login and Noctalia's lock screen
+  - niri-noctalia: GDM login and Noctalia's lock screen
+
+  (All desktops log in through GDM since the change `use-gdm-login`.)
 - The password keeps working everywhere. Users who never enroll a key notice no difference apart from the absence of the "touch your key" prompt.
 - TTY (console) login and `sudo` stay password-only.
 - Enrollment is per user and manual. The user runs `pamu2fcfg` once and stores the result in `~/.config/Yubico/u2f_keys`. Keys are bound to one fleet-wide origin, so the same file works on every nixos-central machine of that user.
@@ -26,7 +28,7 @@ Users of nixos-central machines who own a FIDO2/U2F security key (e.g. a YubiKey
 
 ## Impact
 
-- **Code**: a new `modules/base/u2f.nix` imported from `modules/base/default.nix`. It changes the PAM stacks of `sddm`, `gdm-password` and `kde`, and adds a dedicated PAM service for Noctalia's lock screen. `modules/desktops/niri-noctalia.nix` sets `NOCTALIA_PAM_SERVICE` for the Noctalia service.
+- **Code**: a new `modules/base/u2f.nix` imported from `modules/base/default.nix`. It changes the PAM stacks of `gdm-password` and `kde`, and adds a dedicated PAM service for Noctalia's lock screen. `modules/desktops/niri-noctalia.nix` sets `NOCTALIA_PAM_SERVICE` for the Noctalia service.
 - **Packages**: `pam_u2f` (provides `pamu2fcfg`) is installed system-wide on graphical machines. No extra udev rules are needed, because systemd already grants the seat user access to FIDO devices.
 - **Tests**: new checks in `nixos-central-internal/tests` assert which PAM services contain `pam_u2f` and which do not.
 - **Docs**: a new README section.

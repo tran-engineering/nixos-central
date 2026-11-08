@@ -17,7 +17,6 @@
     ./private.nix
     ./unstable.nix
     ./graphical.nix
-    ./sddm.nix
     ./keyboard.nix
   ];
 
