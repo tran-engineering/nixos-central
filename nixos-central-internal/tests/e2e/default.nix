@@ -2,7 +2,8 @@
 #
 #   nix run --impure -f nixos-central-internal/tests/e2e
 #
-# Boots a NixOS minimal installer image (plus serial console), installs via
+# Boots the published installation image (packages.x86_64-linux.iso, same
+# modules plus a serial console), installs via
 # nixos-central-internal/installer/install.sh against a local git copy of this
 # repo, reboots into the installed system and exercises updates and
 # nixos-central-try.
@@ -13,13 +14,12 @@ let
 
   iso =
     (nixpkgs.lib.nixosSystem {
+      # Keep in sync with packages.x86_64-linux.iso in flake.nix; only the
+      # serial console is test-specific.
       modules = [
-        "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
-        {
-          nixpkgs.hostPlatform = "x86_64-linux";
-          boot.kernelParams = [ "console=ttyS0,115200" ];
-          isoImage.squashfsCompression = "zstd -Xcompression-level 3";
-        }
+        ../../iso
+        { nixpkgs.hostPlatform = "x86_64-linux"; }
+        { boot.kernelParams = [ "console=ttyS0,115200" ]; }
       ];
     }).config.system.build.isoImage;
 in

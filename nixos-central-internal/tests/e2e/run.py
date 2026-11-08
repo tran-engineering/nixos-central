@@ -318,6 +318,21 @@ def phase_install(args, repo):
     vm = live_vm(args)
     run_installer = RUN_INSTALLER
 
+    log("installation image: nixos-central-start (only on tty1 by itself, so run it here)")
+    start = f"NIXOS_CENTRAL_FLAKE={CENTRAL_URL} nixos-central-start"
+    vm.send(start)
+    vm.answer(r"Install nixos-central on this computer\? \[Y/n\]: ", "n", 120)
+    vm.expect(r"To start the installer later, run: nixos-central-start")
+    vm.expect(SHELL_PROMPT)
+    check("EMPTY" in vm.succeed("sudo blkid /dev/vda || echo EMPTY"), "declined start: shell, nothing installed")
+    vm.send(start)
+    vm.answer(r"Install nixos-central on this computer\? \[Y/n\]: ", "", 120)
+    vm.answer(r"Keyboard layout \[us\]: ", "us", 900)
+    vm.expect(r"Hostname \[nixos-[a-z0-9]{4}\]: ")
+    check(True, "accepted start: the current installer asks for the hostname")
+    vm.p.sendcontrol("c")
+    vm.expect(SHELL_PROMPT, 60)
+
     log("installer: prompts, validation, auto-selected disk, declined wipe")
     vm.send(run_installer)
     vm.answer(r"Keyboard layout \[us\]: ", "qwertz", 900)

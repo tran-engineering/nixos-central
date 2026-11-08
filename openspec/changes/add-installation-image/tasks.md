@@ -2,13 +2,13 @@
 
 ## 1. Image definition
 
-- [ ] 1.1 Add `nixos-central-internal/iso/default.nix` (on top of `installation-cd-minimal.nix`: flakes enabled, zstd squashfs, image name with release) and expose `packages.x86_64-linux.iso` in `flake.nix`; verify `nix build .#packages.x86_64-linux.iso` produces one `.iso` under 2 GiB and `nix flake check` does not build it
-- [ ] 1.2 Add `nixos-central-start` (network check with `nmtui` offer, "Install nixos-central on this computer? [Y/n]", then `nix run --refresh "$CENTRAL#installer"` with `CENTRAL` honoring `NIXOS_CENTRAL_FLAKE`; decline leaves a shell with a hint), started from the `nixos` login shell on `/dev/tty1` only; verify with shellcheck, and in QEMU that tty1 shows the prompt and the serial console does not
+- [x] 1.1 Add `nixos-central-internal/iso/default.nix` (on top of `installation-cd-minimal.nix`: flakes enabled, zstd squashfs, image name with release) and expose `packages.x86_64-linux.iso` in `flake.nix`; verify `nix build .#packages.x86_64-linux.iso` produces one `.iso` under 2 GiB and `nix flake check` does not build it
+- [x] 1.2 Add `nixos-central-start` (network check with `nmtui` offer, "Install nixos-central on this computer? [Y/n]", then `nix run --refresh "$CENTRAL#installer"` with `CENTRAL` honoring `NIXOS_CENTRAL_FLAKE`; decline leaves a shell with a hint), started from the `nixos` login shell on `/dev/tty1` only; verify with shellcheck, and in QEMU that tty1 shows the prompt and the serial console does not
 
 ## 2. Tests
 
-- [ ] 2.1 Make `tests/e2e/default.nix` build the flake's image module list plus the serial console; verify the existing e2e run (`nix run --impure -f nixos-central-internal/tests/e2e`) passes unchanged
-- [ ] 2.2 Add an e2e step that runs `nixos-central-start` on the serial console with `NIXOS_CENTRAL_FLAKE` pointing at the test server, and checks that the installer's hostname question appears; also check that declining returns to a shell with nothing installed
+- [x] 2.1 Make `tests/e2e/default.nix` build the flake's image module list plus the serial console; verify the existing e2e run (`nix run --impure -f nixos-central-internal/tests/e2e`) passes unchanged
+- [x] 2.2 Add an e2e step that runs `nixos-central-start` on the serial console with `NIXOS_CENTRAL_FLAKE` pointing at the test server, and checks that the installer's hostname question appears; also check that declining returns to a shell with nothing installed
 
 ## 3. Publishing
 

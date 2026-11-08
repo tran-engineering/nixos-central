@@ -1,51 +1,72 @@
 # nixos-central
 
-One central NixOS configuration for many machines. Anyone can install it from a
-NixOS USB stick with a single command; afterwards every machine follows this
-repository automatically.
+One central NixOS configuration for many machines. Anyone can install it from
+its USB image by answering a few questions; afterwards every machine follows
+this repository automatically.
 
 ## Install
 
-1. Download the [NixOS installation image](https://nixos.org/download/#nixos-iso)
-   (graphical or minimal) and write it to a USB stick. Take the **graphical**
-   image if the machine will be on a Wi-Fi that asks you to sign in through a
-   web page (hotel, university or guest networks): it has a browser for that
-   page, the minimal image has none. On Linux, this downloads
-   the minimal image for 64-bit PCs and writes it in one go; replace `/dev/sdX`
-   with the USB stick (find it with `lsblk`). Everything on the stick is erased.
+1. Download the nixos-central installation image (64-bit PCs, about 1.5 GB) and
+   write it to a USB stick. On Linux, this downloads and writes it in one go;
+   replace `/dev/sdX` with the USB stick (find it with `lsblk`). Everything on
+   the stick is erased.
 
    ```sh
-   curl -L https://channels.nixos.org/nixos-26.05/latest-nixos-minimal-x86_64-linux.iso | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
+   curl -L https://github.com/tran-engineering/nixos-central/releases/latest/download/nixos-central-x86_64.iso | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
    ```
+
+   To check the download first, fetch the image and its checksum and compare:
+
+   ```sh
+   curl -LO https://github.com/tran-engineering/nixos-central/releases/latest/download/nixos-central-x86_64.iso
+   curl -LO https://github.com/tran-engineering/nixos-central/releases/latest/download/nixos-central-x86_64.iso.sha256
+   sha256sum -c nixos-central-x86_64.iso.sha256
+   ```
+
+   On Windows or macOS, write the image with a tool such as
+   [balenaEtcher](https://etcher.balena.io/).
 2. Boot the computer from the USB stick **in UEFI mode**.
-3. Connect to the network. Cable works out of the box; for Wi-Fi run `nmtui`
-   (graphical image: use the network applet; minimal image: `nmtui` or `nmcli`).
-   If you know the network's name, one line is enough (it asks for the password):
+3. Answer the prompt on the screen. With a network cable, it asks
+   *Install nixos-central on this computer?* right away. Without a network, it
+   first offers to set one up: choose *Activate a connection* in `nmtui`, pick
+   your Wi-Fi and enter its password.
 
-   ```sh
-   nmcli --ask device wifi connect "MySSID"
-   ```
+The image always runs the **current** installer and configuration from this
+repository, however old the image is. If you decline the prompt, you get a
+shell; run `nixos-central-start` to get the prompt back.
 
-   If the Wi-Fi shows a sign-in page, open Firefox on the graphical image and
-   sign in before starting the installer; until then it can't reach GitHub.
-4. Open a terminal and run:
+To install a specific branch or revision, start it from the image's shell:
 
-   ```sh
-   curl -sL https://tran-engineering.github.io/nixos-central | sh
-   ```
+```sh
+NIXOS_CENTRAL_FLAKE=git+https://github.com/tran-engineering/nixos-central?ref=my-branch nixos-central-start
+```
 
-   or, answering the questions up front:
+### Already have a NixOS USB stick?
 
-   ```sh
-   curl -sL https://tran-engineering.github.io/nixos-central | sh -s -- --hostname foo --user alice --desktop kde
-   ```
+The installer also runs from the stock
+[NixOS installation image](https://nixos.org/download/#nixos-iso). Take its
+**graphical** image if the machine will be on a Wi-Fi that asks you to sign in
+through a web page (hotel, university or guest networks): it has a browser for
+that page, the minimal images have none. Boot it in UEFI mode, connect to the
+network (cable, the network applet, or `nmtui`; with a sign-in page, sign in
+with Firefox first), open a terminal and run:
 
-   With your [private overlay](#private-overlay) and one of its profiles
-   (keep your phone at hand to add the new SSH key on GitHub):
+```sh
+curl -sL https://tran-engineering.github.io/nixos-central | sh
+```
 
-   ```sh
-   curl -sL https://tran-engineering.github.io/nixos-central | sh -s -- --private git+ssh://git@github.com/alice/private --profile developer
-   ```
+or, answering the questions up front:
+
+```sh
+curl -sL https://tran-engineering.github.io/nixos-central | sh -s -- --hostname foo --user alice --desktop kde
+```
+
+With your [private overlay](#private-overlay) and one of its profiles
+(keep your phone at hand to add the new SSH key on GitHub):
+
+```sh
+curl -sL https://tran-engineering.github.io/nixos-central | sh -s -- --private git+ssh://git@github.com/alice/private --profile developer
+```
 
 Prefer to read the script before running it?
 
@@ -560,6 +581,7 @@ nix flake check                       # evaluates and builds sample hosts, runs 
 nix build .#checks.x86_64-linux.shells
 nix build .#desktopTests.reboot-notify-kde   # full desktop tests (kde, gnome, niri-noctalia), not in flake check (10–15 min each)
 nix run --impure -f nixos-central-internal/tests/e2e   # full installer test in QEMU (needs KVM + internet)
+nix build .#packages.x86_64-linux.iso   # installation image (published by .github/workflows/iso.yml)
 shellcheck nixos-central-internal/installer/install.sh
 shellcheck nixos-central-internal/installer/home-only.sh
 ```

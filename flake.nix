@@ -130,15 +130,30 @@
         };
       };
 
-      packages = forPackageSystems (system: {
-        # Used by the installer: nix run git+https://github.com/tran-engineering/nixos-central#disko
-        inherit (disko.packages.${system}) disko;
-        # Used by home-only.sh for the first switch, so it matches the pinned release.
-        inherit (inputs.home-manager.packages.${system}) home-manager;
-        installer = nixpkgs.legacyPackages.${system}.writeShellScriptBin "nixos-central-install" (
-          builtins.readFile ./nixos-central-internal/installer/install.sh
-        );
-      });
+      packages = forPackageSystems (
+        system:
+        {
+          # Used by the installer: nix run git+https://github.com/tran-engineering/nixos-central#disko
+          inherit (disko.packages.${system}) disko;
+          # Used by home-only.sh for the first switch, so it matches the pinned release.
+          inherit (inputs.home-manager.packages.${system}) home-manager;
+          installer = nixpkgs.legacyPackages.${system}.writeShellScriptBin "nixos-central-install" (
+            builtins.readFile ./nixos-central-internal/installer/install.sh
+          );
+        }
+        # Installation image (nixos-central-internal/iso), x86_64 only. Not in
+        # `checks`; built by tests/e2e (same modules plus a serial console) and
+        # .github/workflows/iso.yml.
+        // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
+          iso =
+            (nixpkgs.lib.nixosSystem {
+              modules = [
+                ./nixos-central-internal/iso
+                { nixpkgs.hostPlatform = system; }
+              ];
+            }).config.system.build.isoImage;
+        }
+      );
 
       checks = forAllSystems (
         system:

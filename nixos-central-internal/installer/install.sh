@@ -241,13 +241,15 @@ ensure_root() {
 # Runs before asking for root, so other systems get no sudo prompt.
 check_live_image() {
   if [ ! -e /etc/NIXOS ]; then
-    die "This is not a NixOS installation image. To install NixOS, boot the image (https://nixos.org/download) and run this again.
+    die "This is not a NixOS installation image. To install nixos-central, boot its installation image
+(https://github.com/tran-engineering/nixos-central/releases/latest/download/nixos-central-x86_64.iso).
 To install only your user environment on this machine, run:
 
   curl -sL https://tran-engineering.github.io/nixos-central/home-only.sh | sh"
   fi
   if ! { command -v nixos-install && command -v nixos-generate-config; } >/dev/null; then
-    die "This installer must run from a booted NixOS installation image (https://nixos.org/download)."
+    die "This installer must run from a booted NixOS installation image, e.g. the nixos-central image:
+https://github.com/tran-engineering/nixos-central/releases/latest/download/nixos-central-x86_64.iso"
   fi
   case "$(findmnt -no FSTYPE / 2>/dev/null)" in
     tmpfs | overlay | rootfs) ;;

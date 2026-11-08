@@ -1,0 +1,77 @@
+name: Installation image
+
+# Builds packages.x86_64-linux.iso (nixos-central-internal/iso) and publishes it
+# as the latest release, so this URL always serves the newest image:
+# https://github.com/tran-engineering/nixos-central/releases/latest/download/nixos-central-x86_64.iso
+on:
+  workflow_dispatch:
+  schedule:
+    # Monthly: picks up kernel and security fixes, and a NixOS release bump.
+    - cron: "0 4 1 * *"
+  push:
+    branches: [main]
+    paths:
+      - nixos-central-internal/iso/**
+      - .github/workflows/iso.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: iso
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      ASSET: nixos-central-x86_64.iso
+      KEEP: 3 # image releases to keep
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Build image
+        run: |
+          nix build -L .#packages.x86_64-linux.iso
+          mkdir out
+          cp result/iso/*.iso "out/$ASSET"
+          size=$(stat -c %s "out/$ASSET")
+          echo "Image size: $size bytes"
+          # GitHub rejects release assets of 2 GiB or more.
+          if [ "$size" -ge $((2 * 1024 * 1024 * 1024)) ]; then
+            echo "::error::The image is larger than the 2 GiB release asset limit."
+            exit 1
+          fi
+          (cd out && sha256sum "$ASSET" >"$ASSET.sha256")
+          echo "NIXOS_RELEASE=$(nix eval --raw .#lib.release)" >>"$GITHUB_ENV"
+
+      - name: Publish release
+        run: |
+          date=$(date -u +%Y-%m-%d)
+          tag="iso-$date"
+          # A second run on the same day gets its own release.
+          if gh release view "$tag" >/dev/null 2>&1; then tag="$tag-$GITHUB_RUN_NUMBER"; fi
+          gh release create "$tag" "out/$ASSET" "out/$ASSET.sha256" \
+            --target "$GITHUB_SHA" \
+            --latest \
+            --title "Installation image $date" \
+            --notes "nixos-central installation image based on NixOS $NIXOS_RELEASE, built from $GITHUB_SHA ($GITHUB_REF_NAME).
+
+          The image runs the current installer from the default branch, whatever its age.
+          Download: https://github.com/$GITHUB_REPOSITORY/releases/latest/download/$ASSET
+          Checksum: \`sha256sum -c $ASSET.sha256\`"
+
+      - name: Prune old image releases
+        run: |
+          gh release list --limit 200 --json tagName,createdAt \
+            --jq "[.[] | select(.tagName | startswith(\"iso-\"))] | sort_by(.createdAt) | reverse | .[$KEEP:] | .[].tagName" |
+            while read -r tag; do
+              echo "Deleting $tag"
+              gh release delete "$tag" --cleanup-tag --yes
+            done
