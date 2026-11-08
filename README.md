@@ -568,6 +568,29 @@ desktop (all except `none`) also has:
   (`chmod +x App.AppImage`, or in the file manager's properties) and start it
   with `./App.AppImage` or a double-click.
 
+## Scripts from other distributions
+
+Scripts written for other distributions run unchanged, even when they
+hard-code paths like `#!/bin/bash`, `#!/usr/bin/python3` or `/usr/bin/git`.
+On every machine, `/usr/bin/<name>` and `/bin/<name>` lead to the program
+`<name>` that the running program would find on its `PATH`:
+
+```sh
+/usr/bin/bash --version                        # the system's bash
+/usr/bin/hello                                 # No such file or directory: not installed
+nix shell nixpkgs#hello -c /usr/bin/hello      # found: hello is on PATH in this shell
+```
+
+So what shows up depends on who asks: a program from your profile or a
+`nix shell` is there for you, but not for root or for system services.
+`/bin/sh`, `/usr/bin/env`, `/bin/bash` and `/usr/bin/bash` always work, also
+without a `PATH`. `ls /usr/bin` shows an empty directory; the programs are
+found only when asked for by name.
+
+This covers paths only: prebuilt programs downloaded for other distributions
+(not scripts) usually still don't start, as they expect libraries in
+`/usr/lib`. Use a Nix package, Flatpak or an AppImage for those.
+
 ## The nixos-central command
 
 Everything you do by hand with a machine or a standalone home goes through one
@@ -700,6 +723,9 @@ the first login into a fresh home.
 offline and the AppImage registration, on a machine without desktop and with
 the switch set by hand; installing from Flathub and the app stores need
 network and are checked by hand.
+`envfs` checks that `/usr/bin/<name>` and `/bin/<name>` follow the caller's
+`PATH` (also inside `nix shell`) and that `sh`, `env` and `bash` resolve without
+one, including from a service.
 `u2f-pam` checks which generated PAM services accept a security key (login
 and lock screens) and which must not (`login`, `sudo`, `su`, desktop `none`);
 signing in with a real key is checked by hand.

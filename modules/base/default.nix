@@ -6,6 +6,7 @@
     ./auto-upgrade.nix
     ./command.nix
     ./docker.nix
+    ./envfs.nix
     ./flatpak.nix
     ./fwupd.nix
     ./gc.nix

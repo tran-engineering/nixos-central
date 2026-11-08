@@ -250,6 +250,65 @@ in
       '';
     };
 
+    # /usr/bin/<name> and /bin/<name> resolve through the caller's PATH (envfs);
+    # sh, env and bash also without one.
+    envfs = runTest {
+      name = "nixos-central-envfs";
+      nodes.machine =
+        { lib, pkgs, ... }:
+        let
+          script =
+            name: shebang:
+            pkgs.writeTextFile {
+              inherit name;
+              executable = true;
+              text = ''
+                #!${shebang}
+                echo "$BASH_VERSION"
+              '';
+            };
+        in
+        {
+          imports = [ (testHost { desktop = "none"; }) ];
+          virtualisation.memorySize = 3072;
+          virtualisation.additionalPaths = [ pkgs.hello ];
+          environment.etc."envfs-test/bin-bash".source = script "bin-bash" "/bin/bash";
+          environment.etc."envfs-test/usr-bin-bash".source = script "usr-bin-bash" "/usr/bin/bash";
+          # A service whose PATH has no bash on it: only the fallback can answer.
+          systemd.services.envfs-no-path = {
+            environment.PATH = lib.mkForce "/nonexistent";
+            serviceConfig = {
+              Type = "oneshot";
+              ExecStart = "/etc/envfs-test/usr-bin-bash";
+            };
+          };
+        };
+      testScript = ''
+        machine.wait_for_unit("multi-user.target")
+        machine.succeed("systemctl is-active usr-bin.mount bin.mount")
+        failed = machine.succeed("systemctl list-units --failed --no-legend --plain").strip()
+        assert failed == "", failed
+
+        # Shebangs as the user
+        machine.succeed("su - alice -c /etc/envfs-test/bin-bash | grep .")
+        machine.succeed("su - alice -c /etc/envfs-test/usr-bin-bash | grep .")
+
+        # Only what is on the caller's PATH
+        machine.fail("su - alice -c 'test -e /usr/bin/hello'")
+        machine.fail("su - alice -c /usr/bin/hello")
+        machine.succeed("su - alice -c 'nix shell nixpkgs#hello -c /usr/bin/hello' | grep 'Hello, world!'")
+
+        # Without PATH: the fallbacks
+        machine.succeed("env -i /usr/bin/bash -c 'echo ok' | grep -x ok")
+        machine.succeed("env -i /bin/bash -c true")
+        machine.succeed("env -i /bin/sh -c true")
+        machine.succeed("env -i /usr/bin/env true")
+        machine.fail("env -i /usr/bin/hello")
+        machine.succeed("systemctl start envfs-no-path.service")
+        machine.succeed("journalctl -u envfs-no-path.service -o cat | grep -E '^[0-9]+\\.'")
+      '';
+    };
+
     # The firmware update daemon answers the primary user and the update list
     # is refreshed on a timer.
     fwupd = runTest {
