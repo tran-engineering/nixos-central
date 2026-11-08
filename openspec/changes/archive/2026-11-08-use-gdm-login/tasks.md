@@ -13,4 +13,4 @@
 ## 3. Verification
 
 - [x] 3.1 Run `nix flake check` and `nix build .#desktopTests.reboot-notify-kde` (logs in through GDM's auto-login); both pass.
-- [ ] 3.2 On a real KDE and a niri-noctalia machine after upgrading and rebooting: GDM appears, logging in with the password starts Plasma or niri with Noctalia, the wallet or keyring is unlocked, and a key touch logs in after picking the account.
+- [x] 3.2 On a real KDE and a niri-noctalia machine after upgrading and rebooting: GDM appears, logging in with the password starts Plasma or niri with Noctalia, the wallet or keyring is unlocked, and a key touch logs in after picking the account.

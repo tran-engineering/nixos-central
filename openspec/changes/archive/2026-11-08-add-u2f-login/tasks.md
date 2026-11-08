@@ -16,7 +16,7 @@
 
 ## 4. Documentation
 
-- [ ] 4.1 Add a README section "Signing in with a security key (YubiKey)", placed after "How a machine is configured" / "Desktops". It covers:
+- [x] 4.1 Add a README section "Signing in with a security key (YubiKey)", placed after "How a machine is configured" / "Desktops". It covers:
   - the enrollment command `mkdir -p ~/.config/Yubico && pamu2fcfg -o pam://nixos-central -i pam://nixos-central > ~/.config/Yubico/u2f_keys`
   - adding a backup key with `-n` and `>>`
   - copying the file to the user's other machines
@@ -29,11 +29,11 @@
 
 ## 5. Integration verification on hardware
 
-- [ ] 5.1 On a real machine (or a VM with USB passthrough of a YubiKey), one per desktop (kde, gnome, niri-noctalia), enroll a key as the README describes. Then check:
+- [x] 5.1 On a real machine (or a VM with USB passthrough of a YubiKey), one per desktop (kde, gnome, niri-noctalia), enroll a key as the README describes. Then check:
   - login and unlock work with a key touch
   - login and unlock work with the password, both with the key plugged in and unplugged, with no noticeable delay when it is unplugged
   - `sudo` and TTY login do not prompt for the key
 
   Record the actual prompt behavior per desktop and correct the README in 4.1 if it differs.
-- [ ] 5.2 Copy the enrolled `~/.config/Yubico/u2f_keys` to a second nixos-central machine and verify that the key is accepted there without re-enrolling (spec: portable enrollment).
+- [x] 5.2 Copy the enrolled `~/.config/Yubico/u2f_keys` to a second nixos-central machine and verify that the key is accepted there without re-enrolling (spec: portable enrollment).
 - [x] 5.3 Run `nix flake check` and verify that it passes, including all `host-*` checks and `u2f-pam`.

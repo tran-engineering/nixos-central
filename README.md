@@ -305,7 +305,12 @@ Where the key works:
 |---|---|---|
 | `kde` | GDM: choose your account, touch the key when asked | touch the key, then click *Unlock* |
 | `gnome` | GDM: choose your account, touch the key when asked | same |
-| `niri-noctalia` | GDM: choose your account, touch the key when asked | Noctalia: leave the password empty, press Enter, touch the key |
+| `niri-noctalia` | GDM: choose your account, touch the key when asked | Noctalia: touch the key when asked (see below) |
+
+On `niri-noctalia`, turn on *Settings → Lock Screen → Behavior → Auto-start
+authentication* in Noctalia once: the lock screen then asks for the key right
+away. Without it, press Enter on the empty password field first, then touch
+the key.
 
 Touch the key only when asked: a YubiKey touched at other times types a
 one-time code into the focused field (the random characters you may see). If

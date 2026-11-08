@@ -41,7 +41,7 @@ The central repository SHALL offer a set of named desktops, including `kde`, `gn
 
 #### Scenario: KDE selected
 - **WHEN** a machine flake sets desktop `kde`
-- **THEN** the system boots into a graphical KDE Plasma login
+- **THEN** the system boots into the graphical GDM login, and logging in starts a KDE Plasma Wayland session
 
 #### Scenario: GNOME selected
 - **WHEN** a machine flake sets desktop `gnome`
@@ -49,7 +49,7 @@ The central repository SHALL offer a set of named desktops, including `kde`, `gn
 
 #### Scenario: niri with Noctalia selected
 - **WHEN** a machine flake sets desktop `niri-noctalia`
-- **THEN** the system boots into the graphical SDDM login, and logging in starts a niri session in which the Noctalia shell is running
+- **THEN** the system boots into the graphical GDM login, and logging in starts a niri session in which the Noctalia shell is running
 
 #### Scenario: Change desktop later
 - **WHEN** a user changes the desktop value in `/etc/nixos/flake.nix` to another offered desktop and rebuilds
