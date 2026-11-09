@@ -1,14 +1,21 @@
 name: Flake checks
 
-# The equivalent of `nix flake check`, spread over several runners. On one
-# hosted runner (4 CPUs, 16 GB) Nix ran about four NixOS VM tests at once next
-# to the evaluator holding every check, ran out of memory and took the runner
-# down with it ("lost communication with the server").
+# The equivalent of `nix flake check`, spread over several runners.
 #
-# `eval` evaluates everything without building and splits the checks into
-# shards: the sample hosts, the NVIDIA drivers, and the remaining checks (mostly
-# VM tests) round-robin. Each shard builds on its own runner, at most two
-# derivations at a time. New checks are picked up without editing this file.
+# `nix flake check` can't run on a hosted runner (4 CPUs, 16 GB): evaluating
+# every check in one Nix process takes about 19 GB, because the evaluator never
+# frees memory, and the runner dies ("lost communication with the server").
+# Evaluated one at a time, no check takes more than about 6 GB.
+#
+# So no Nix process here evaluates more than one check or package: `shards`
+# only lists the check names and evaluates each package on its own, and each
+# `build` shard evaluates its checks one by one into .drv files, then builds
+# those, at most two at a time, as a VM test takes up to 4 GB. The checks
+# already cover every nixosConfigurations and homeConfigurations entry.
+#
+# Shards: the sample hosts, the NVIDIA drivers, and the remaining checks
+# (mostly VM tests) round-robin. New checks are picked up without editing this
+# file.
 #
 # Used by ci.yml and flake-update.yml.
 on:
@@ -23,7 +30,7 @@ permissions:
   contents: read
 
 jobs:
-  eval:
+  shards:
     runs-on: ubuntu-latest
     outputs:
       shards: ${{ steps.shards.outputs.shards }}
@@ -34,8 +41,14 @@ jobs:
 
       - uses: DeterminateSystems/nix-installer-action@main
 
-      - name: nix flake check --no-build
-        run: nix flake check --no-build -L
+      # What `nix flake check` evaluates besides the checks. Not built: the
+      # installation image is built by iso.yml.
+      - name: Evaluate the packages
+        run: |
+          for package in $(nix eval --raw .#packages.x86_64-linux --apply 'p: toString (builtins.attrNames p)'); do
+            echo "packages.x86_64-linux.$package"
+            nix eval --raw ".#packages.x86_64-linux.$package.drvPath" >/dev/null
+          done
 
       - name: Split the checks into shards
         id: shards
@@ -55,13 +68,13 @@ jobs:
           echo "shards=$shards" >>"$GITHUB_OUTPUT"
 
   build:
-    needs: eval
+    needs: shards
     name: build (${{ matrix.shard.name }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(needs.eval.outputs.shards) }}
+        shard: ${{ fromJSON(needs.shards.outputs.shards) }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -73,11 +86,21 @@ jobs:
 
       - uses: DeterminateSystems/nix-installer-action@main
 
-      # At most two builds at a time: a VM test takes up to 4 GB.
-      - name: nix build
+      # One Nix process per check, so memory is freed in between. Evaluation-only
+      # checks fail here.
+      - name: Evaluate
         env:
           CHECKS: ${{ matrix.shard.checks }}
         run: |
-          args=()
-          for check in $CHECKS; do args+=(".#checks.x86_64-linux.$check"); done
-          nix build -L --no-link --keep-going --max-jobs 2 "${args[@]}"
+          for check in $CHECKS; do
+            echo "::group::checks.x86_64-linux.$check"
+            nix eval --raw ".#checks.x86_64-linux.$check.drvPath" >>"$RUNNER_TEMP/drvs"
+            echo >>"$RUNNER_TEMP/drvs"
+            echo "::endgroup::"
+          done
+
+      # Building .drv files needs no evaluation.
+      - name: Build
+        run: |
+          mapfile -t drvs < <(sed 's/$/^*/' "$RUNNER_TEMP/drvs")
+          nix build -L --no-link --keep-going --max-jobs 2 "${drvs[@]}"
