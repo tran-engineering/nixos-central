@@ -7,18 +7,18 @@ Defines how a machine's system configuration is composed from the central reposi
 ## Requirements
 
 ### Requirement: Machine configuration is a thin local flake
-Each installed machine SHALL have a flake in `/etc/nixos` that consumes the central repository as an input named `central` and declares only machine facts: hostname, primary username, desktop, install disk, the NixOS release it was installed with (state version), and hardware configuration. It MAY additionally declare one private overlay as an input named `private` (see `private-overlay`) and a profile name (see `user-profiles`). All other system configuration MUST come from the central repository.
+Each installed machine SHALL have a flake in `/etc/nixos` that consumes the central repository as an input named `central` and declares only machine facts: hostname, primary username, desktop, install disk, the NixOS release it was installed with (state version), hardware configuration, and its NVIDIA GPU (see `nvidia-graphics`). It MAY additionally declare one private overlay as an input named `private` (see `private-overlay`) and a profile name (see `user-profiles`). All other system configuration MUST come from the central repository.
 
 #### Scenario: Inspect a machine's config
 - **WHEN** an administrator opens `/etc/nixos` on an installed machine
-- **THEN** it contains the local flake, its lock file, and `hardware-configuration.nix`, and the flake sets only hostname, user, desktop, disk, state version, and hardware, plus the private overlay and profile if they were set up
+- **THEN** it contains the local flake, its lock file, and `hardware-configuration.nix`, and the flake sets only hostname, user, desktop, disk, state version, hardware, and NVIDIA GPU, plus the private overlay and profile if they were set up
 
 #### Scenario: Rebuild from local flake
 - **WHEN** a user runs `sudo nixos-rebuild switch --flake /etc/nixos`
 - **THEN** the system builds using the locked revision of the central repository
 
 ### Requirement: Central repository exposes a host builder
-The central repository SHALL expose a stable entry point that builds a complete NixOS system from hostname, primary username, desktop name, install disk, state version, extra modules, an optional private overlay, and an optional profile name. Changes to the central repository MUST NOT require edits to existing machine flakes unless explicitly announced as breaking.
+The central repository SHALL expose a stable entry point that builds a complete NixOS system from hostname, primary username, desktop name, install disk, state version, extra modules, an optional private overlay, an optional profile name, and an optional NVIDIA GPU description. Changes to the central repository MUST NOT require edits to existing machine flakes unless explicitly announced as breaking.
 
 #### Scenario: State version stays fixed
 - **WHEN** the central repository moves to a newer NixOS release
@@ -35,6 +35,14 @@ The central repository SHALL expose a stable entry point that builds a complete 
 #### Scenario: Machine without profile
 - **WHEN** an existing machine flake doesn't pass a profile
 - **THEN** it builds exactly as before
+
+#### Scenario: Machine without NVIDIA fact
+- **WHEN** an existing machine flake doesn't pass an NVIDIA GPU description
+- **THEN** it builds exactly as before
+
+#### Scenario: Add NVIDIA after install
+- **WHEN** a user adds `nvidia = { };` to the `mkHost` call in `/etc/nixos/flake.nix` of an existing machine and rebuilds
+- **THEN** the machine is configured as described in `nvidia-graphics`
 
 ### Requirement: Desktop is selectable per machine
 The central repository SHALL offer a set of named desktops, including `kde`, `gnome`, `niri-noctalia` and `none`. The machine flake's desktop value SHALL determine which desktop environment is enabled. An unknown desktop name MUST fail evaluation with a message listing valid names.
