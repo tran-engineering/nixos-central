@@ -29,6 +29,7 @@ init_globals() {
 
   HOST="" USERNAME="" DESKTOP="" DISK="" KEYBOARD_LAYOUT=""
   PRIVATE_URL="" PROFILE=""
+  NVIDIA=null NVIDIA_FLAG=0 NO_NVIDIA_FLAG=0
   HOST_FLAG=0 USER_FLAG=0 DESKTOP_FLAG=0 DISK_FLAG=0 KEYBOARD_LAYOUT_FLAG=0 PRIVATE_FLAG=0 PROFILE_FLAG=0
   DESKTOPS="" RELEASE="" DISK_ID="" PASSWORD_HASH="" KEYBOARD_LAYOUTS=""
   DEFAULT_PRIVATE="" PROFILES="" KEY_GENERATED=0 INSTALLED=0
@@ -61,6 +62,8 @@ Options:
                     an SSH key for the user and shows it to add on GitHub
   --profile NAME    profile from the private overlay (needs --private;
                     default: the user's name if the overlay has it, else default)
+  --nvidia          install the NVIDIA driver for the GPU found, without asking
+  --no-nvidia       don't install the NVIDIA driver, and don't ask
   -h, --help        show this help
 EOF
 }
@@ -102,6 +105,8 @@ parse_flags() {
       --keyboard-layout) KEYBOARD_LAYOUT=$value KEYBOARD_LAYOUT_FLAG=1 ;;
       --private) PRIVATE_URL=$value PRIVATE_FLAG=1 ;;
       --profile) PROFILE=$value PROFILE_FLAG=1 ;;
+      --nvidia) NVIDIA_FLAG=1 ;;
+      --no-nvidia) NO_NVIDIA_FLAG=1 ;;
       *)
         usage
         die "Unknown option: $1"
@@ -126,6 +131,9 @@ check_flags() {
     [ "$PRIVATE_FLAG" = 1 ] ||
       die "--profile needs --private: a profile can only be chosen together with a private overlay."
     [[ $PROFILE =~ ^[A-Za-z0-9._-]+$ ]] || die "Invalid profile name '$PROFILE'."
+  fi
+  if [ "$NVIDIA_FLAG" = 1 ] && [ "$NO_NVIDIA_FLAG" = 1 ]; then
+    die "--nvidia and --no-nvidia contradict each other: pass only one."
   fi
 }
 
@@ -217,6 +225,43 @@ collect_machine_facts() {
       info "Choose one of: $DESKTOPS"
     done
   fi
+
+  collect_nvidia
+}
+
+# Records the nvidia fact of the machine flake (README, "NVIDIA graphics").
+# Silent on a machine without an NVIDIA GPU.
+collect_nvidia() {
+  [ "$NO_NVIDIA_FLAG" = 0 ] || return 0
+
+  local detected
+  detected=$(bash "$(nixx eval --raw "$CENTRAL#lib.nvidiaDetect")") ||
+    die "Could not check this computer for an NVIDIA GPU. To install without the NVIDIA driver, pass --no-nvidia."
+  if [ "$detected" = null ]; then
+    [ "$NVIDIA_FLAG" = 0 ] ||
+      die "--nvidia was passed, but this computer has no NVIDIA GPU."
+    return 0
+  fi
+
+  if [ "$NVIDIA_FLAG" = 0 ]; then
+    heading "NVIDIA"
+    local gpu answer
+    gpu=$(lspci -d 10de: 2>/dev/null | grep -E 'VGA|3D|Display' || true)
+    info "Found: ${gpu:-an NVIDIA GPU}"
+    info "To be recorded in the machine's configuration: nvidia = $detected;"
+    info "The driver uses NVIDIA's open kernel modules, which need a Turing or newer GPU"
+    info "(RTX, GTX 16xx or newer)."
+    ask answer "Install the NVIDIA driver? [Y/n]"
+    case "$answer" in
+      "" | y | Y | yes | Yes) ;;
+      *) return 0 ;;
+    esac
+  fi
+
+  # Any HTTP response will do: this only checks that the server can be reached.
+  curl -sI --max-time 15 https://download.nvidia.com/ >/dev/null ||
+    die "No connection to download.nvidia.com, where the NVIDIA driver comes from. Check the network, or run the installer again with --no-nvidia to install without the driver."
+  NVIDIA=$detected
 }
 
 # Switch this live console to the chosen layout: the console keymap from the
@@ -541,6 +586,7 @@ write_machine_flake() {
     -e "s|@KEYBOARD_LAYOUT@|$KEYBOARD_LAYOUT|g" \
     -e "s|@KEYBOARD_LAYOUTS@|$KEYBOARD_LAYOUTS|g" \
     -e "s|@STATE_VERSION@|$RELEASE|g" \
+    -e "s|@NVIDIA@|$(sed_escape "$NVIDIA")|g" \
     "$template/flake.nix" >"$WORK/flake.nix"
   if [ -n "$PRIVATE_URL" ]; then
     # The same edit as `nixos-central private setup`, so `remove` undoes it.
@@ -605,6 +651,11 @@ finish() {
   info "    desktop   $DESKTOP"
   info "    keyboard  $KEYBOARD_LAYOUT"
   info "    disk      $DISK_ID"
+  case "$NVIDIA" in
+    null) ;;
+    *BusId*) info "    NVIDIA    driver with PRIME offload (nvidia-offload <program>)" ;;
+    *) info "    NVIDIA    driver" ;;
+  esac
   if [ -n "$PRIVATE_URL" ]; then
     info "    overlay   $PRIVATE_URL"
     info "    profile   $PROFILE"

@@ -280,6 +280,18 @@ def phase_variants(args):
     check(True, "32 GiB disk: aborted and listed the disks")
     check("EMPTY" in vm.succeed("sudo blkid /dev/vda || echo EMPTY"), "small disk untouched")
 
+    log("flags: --nvidia and --no-nvidia contradict each other")
+    vm.send(f"{RUN_INSTALLER} {flags} --nvidia --no-nvidia")
+    vm.expect(r"--nvidia and --no-nvidia contradict each other", 300)
+    vm.expect(SHELL_PROMPT)
+    check("EMPTY" in vm.succeed("sudo blkid /dev/vda || echo EMPTY"), "--nvidia --no-nvidia: aborted, disk untouched")
+
+    log("flags: --nvidia without an NVIDIA GPU")
+    vm.send(f"{RUN_INSTALLER} {flags} --keyboard-layout us --nvidia")
+    vm.expect(r"--nvidia was passed, but this computer has no NVIDIA GPU", 900)
+    vm.expect(SHELL_PROMPT)
+    check("EMPTY" in vm.succeed("sudo blkid /dev/vda || echo EMPTY"), "--nvidia without a GPU: aborted, disk untouched")
+
     log("preflight: no network")
     vm.succeed(f"curl -sLo /tmp/install.sh http://{HOST_IP}:{PORT}/install.sh && sudo nmcli networking off")
     vm.send(f"NIXOS_CENTRAL_FLAKE={CENTRAL_URL} sh /tmp/install.sh {flags.removeprefix('-s -- ')}")
@@ -405,6 +417,7 @@ def phase_install(args, repo):
     check(all(f in out for f in ["flake.nix", "flake.lock", "hardware-configuration.nix"]), "/mnt/etc/nixos has flake, lock, hardware config")
     out = vm.succeed("sudo cat /mnt/etc/nixos/flake.nix")
     check('keyboardLayout = "sg";' in out, "keyboard layout fact sg written to the machine flake")
+    check("nvidia = null;" in out, "no NVIDIA GPU: nvidia = null in the machine flake, without a question")
     # Inside the target: /mnt/etc/vconsole.conf is an absolute symlink (/etc/static/...)
     # that would resolve into the live system's /etc.
     rc, _ = vm.run("sudo nixos-enter --root /mnt --silent -c \"grep -q '^KEYMAP=sg-latin1$' /etc/vconsole.conf\"")

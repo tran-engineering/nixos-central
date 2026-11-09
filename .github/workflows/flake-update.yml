@@ -62,8 +62,8 @@ jobs:
           git fetch --no-tags origin "${{ steps.pr.outputs.sha }}"
           git checkout --detach "${{ steps.pr.outputs.sha }}"
 
-      # Evaluates everything, builds the ci-* sample hosts and runs the VM tests,
-      # like the flake job in ci.yml.
+      # Evaluates everything, builds the ci-* sample hosts and the NVIDIA drivers
+      # of both channels and runs the VM tests, like the flake job in ci.yml.
       - name: nix flake check
         if: steps.pr.outputs.number != ''
         run: nix flake check -L

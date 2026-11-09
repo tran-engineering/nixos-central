@@ -47,6 +47,7 @@ let
       disk,
       stateVersion,
       keyboardLayout ? "us", # one of the names in keyboard-layouts.nix
+      nvidia ? null, # the NVIDIA GPU (modules/options.nix), or null
       modules ? [ ],
       system ? "x86_64-linux",
       private ? null, # private overlay flake (README, "Private overlay")
@@ -74,6 +75,7 @@ let
             desktop
             disk
             keyboardLayout
+            nvidia
             profile
             ;
         };
@@ -171,6 +173,9 @@ in
   defaultPrivate = import ./default-private.nix;
   githubHostKey = import ./github-host-key.nix;
   privateFlakeEdit = ../private/flake-edit.sh;
+
+  # Used by the installer: prints the nvidia fact for the machine it runs on.
+  nvidiaDetect = ../installer/detect-nvidia.sh;
 
   # NixOS release of the pinned nixpkgs, e.g. "26.05". The installer writes it
   # into new machine flakes as their stateVersion.

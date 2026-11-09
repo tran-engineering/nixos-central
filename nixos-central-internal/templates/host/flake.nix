@@ -15,6 +15,7 @@
         disk = "@DISK@";
         keyboardLayout = "@KEYBOARD_LAYOUT@"; # one of: @KEYBOARD_LAYOUTS@
         stateVersion = "@STATE_VERSION@"; # release this machine was installed with; do not change
+        nvidia = @NVIDIA@; # NVIDIA GPU, or null; add channel = "unstable"; for a newer driver (README, "NVIDIA graphics")
         modules = [ ./hardware-configuration.nix ];
       };
     };

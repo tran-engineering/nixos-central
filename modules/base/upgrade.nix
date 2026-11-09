@@ -76,9 +76,7 @@ let
 
       echo
       echo "The latest update is active."
-      if [ "$(readlink -f /run/booted-system/kernel)" != "$(readlink -f /run/current-system/kernel)" ]; then
-        echo "The new kernel is used after the next reboot."
-      fi
+      ${builtins.readFile ./upgrade-reboot-hint.sh}
     '';
   };
 in

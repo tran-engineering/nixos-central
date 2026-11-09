@@ -10,6 +10,7 @@
     ./flatpak.nix
     ./fwupd.nix
     ./gc.nix
+    ./nvidia.nix
     ./reboot-notify.nix
     ./try.nix
     ./u2f.nix

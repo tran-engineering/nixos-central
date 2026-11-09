@@ -87,6 +87,8 @@ sh install.sh
 | `--keyboard-layout NAME` | asked, suggests `us` | `us`, `de`, `sg` (Swiss German), `sf` (Swiss French) |
 | `--private URL` | asked, suggests no overlay | flake URL of your [private overlay](#private-overlay); the question suggests the shared overlay |
 | `--profile NAME` | asked, suggests your username if the overlay has it, else `default` | a profile of the overlay; only together with `--private` |
+| `--nvidia` | asked if an NVIDIA GPU is found, suggests yes | installs the [NVIDIA driver](#nvidia-graphics) without asking; stops if no NVIDIA GPU is found |
+| `--no-nvidia` | | no NVIDIA driver, and no question |
 
 Values passed as options are not asked for; invalid option values stop the
 installer before anything is changed.
@@ -96,7 +98,9 @@ installer before anything is changed.
 1. Checks it runs on the NixOS live image, booted in UEFI mode, with access to GitHub.
 2. Asks for the keyboard layout first and switches this console to it, so the
    following answers — including the disk passphrase — are typed with it. Then
-   asks for hostname, username and desktop (unless given as options).
+   asks for hostname, username and desktop (unless given as options). If it finds
+   an NVIDIA GPU, it shows it and offers the [driver](#nvidia-graphics) (default:
+   yes); if you accept, it also checks that `download.nvidia.com` can be reached.
 3. Picks the disk: the first whole disk of at least 40 GiB that is not removable,
    not connected via USB, and not the USB stick it booted from. It shows device,
    size and model and continues only if you type `yes`.
@@ -201,6 +205,7 @@ comes from this repository (the `central` input):
       disk = "/dev/disk/by-id/nvme-...";
       keyboardLayout = "sg";
       stateVersion = "26.05";  # release the machine was installed with; never change
+      nvidia = null;           # the machine's NVIDIA GPU, if any
       modules = [ ./hardware-configuration.nix ];
     };
   };
@@ -217,6 +222,7 @@ comes from this repository (the `central` input):
 | `disk` | disk the system was installed on |
 | `keyboardLayout` | keyboard layout: `us`, `de`, `sg` (Swiss German) or `sf` (Swiss French); console and graphical session |
 | `stateVersion` | NixOS release at install time |
+| `nvidia` | optional: the machine's NVIDIA GPU (see [NVIDIA graphics](#nvidia-graphics)); default `null`, no driver |
 | `profile` | optional: profile of the [private overlay](#private-overlay) to use instead of `user`'s name (see [Users and profiles](#users-and-profiles)); the account keeps the name `user`. Without an overlay it has no effect (the build warns) |
 | `private` | optional: the [private overlay](#private-overlay) flake |
 | `modules` | extra NixOS modules; the installer adds `hardware-configuration.nix` |
@@ -267,6 +273,64 @@ A new desktop is a new file `modules/desktops/<name>.nix`, enabled with
 `lib.mkIf (config.nixos-central.desktop == "<name>")`. The GDM login screen,
 sound, Bluetooth and printing for every graphical desktop come from
 `modules/base/graphical.nix`.
+
+## NVIDIA graphics
+
+The installer finds NVIDIA GPUs, offers the driver, and records the result in the
+`nvidia` fact of `/etc/nixos/flake.nix`. To add it to an existing machine, set the
+fact yourself, run `sudo nixos-rebuild boot --flake /etc/nixos` and reboot.
+
+```nix
+nvidia = null;                        # no NVIDIA driver
+nvidia = { };                         # NVIDIA GPU driving the displays, e.g. a desktop
+nvidia = {                            # hybrid laptop
+  intelBusId = "PCI:0@0:2:0";         # or amdgpuBusId
+  nvidiaBusId = "PCI:1@0:0:0";
+};
+```
+
+Every NVIDIA machine uses NVIDIA's **open kernel modules** with its proprietary
+userspace, so the GPU must be a Turing or newer one (RTX, GTX 16xx or newer). Bus
+IDs are decimal, while `lspci` shows them in hexadecimal: `0a:00.0` is
+`PCI:10@0:0:0`.
+
+The installer only records bus IDs for a machine with an integrated Intel or AMD
+GPU and a battery. On such a **hybrid laptop**, the desktop renders on the
+integrated GPU, and the NVIDIA GPU powers down until a program uses it. Run a
+program on the NVIDIA GPU with:
+
+```sh
+nvidia-offload <program>
+```
+
+**Containers** reach the GPU through its CDI device name. Docker's `--gpus` option
+and `runtime: nvidia` in compose files aren't set up for this:
+
+```sh
+docker run --rm --device nvidia.com/gpu=all <image> nvidia-smi
+```
+
+**Driver channel.** Add `channel` to the fact to choose where the driver comes
+from:
+
+```nix
+nvidia = { channel = "unstable"; };   # can be combined with bus IDs
+```
+
+| Channel | Driver | Built on the machine |
+|---|---|---|
+| `"stable"` (default) | production driver of this repository's nixpkgs release | userspace package |
+| `"unstable"` | newest driver of nixos-unstable, against the machine's own kernel | userspace package and kernel modules |
+
+Both download the driver from NVIDIA during the install and when it changes. An
+unstable driver has more that can go wrong: if it stops building for the machine,
+the machine keeps running but gets no updates until that's fixed.
+`nix flake check` builds the drivers of both channels, so an update that breaks
+either one stays out of `main` until someone resolves it.
+
+`nixos-central upgrade` activates a new driver while the old kernel modules are
+still loaded, and says so: programs using the GPU may fail until you reboot. The
+daily update only takes effect after a reboot, so it doesn't have this problem.
 
 ## Signing in with a security key (YubiKey)
 

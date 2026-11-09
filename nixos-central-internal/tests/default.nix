@@ -695,6 +695,50 @@ in
         '';
       };
 
+    # What nixos-central upgrade says needs a reboot, on the real system's links.
+    # Generations stand in for the upgrade: this offline VM can't build a new system.
+    upgrade-reboot-hint = runTest {
+      name = "nixos-central-upgrade-reboot-hint";
+      nodes.machine = {
+        imports = [ (testHost { desktop = "none"; }) ];
+        environment.systemPackages = [
+          (pkgs.writeShellScriptBin "reboot-hint" (builtins.readFile ../../modules/base/upgrade-reboot-hint.sh))
+        ];
+      };
+      testScript = ''
+        machine.wait_for_unit("multi-user.target")
+        booted = machine.succeed("readlink -f /run/booted-system").strip()
+        machine.succeed(f"test -e {booted}/kernel-modules")
+
+        def generation(number, *replaced):
+            """/run/current-system: the booted system with these links replaced."""
+            new = f"/tmp/generation-{number}"
+            machine.succeed(
+                f"mkdir {new}",
+                f"for f in {booted}/*; do ln -s \"$f\" {new}/; done",
+            )
+            for name in replaced:
+                machine.succeed(f"rm {new}/{name} && mkdir {new}-{name} && ln -s {new}-{name} {new}/{name}")
+            machine.succeed(f"ln -sfn {new} /run/current-system")
+
+        with subtest("nothing changed: no hint"):
+            generation(1)
+            assert machine.succeed("reboot-hint") == ""
+
+        with subtest("kernel modules changed: driver hint"):
+            generation(2, "kernel-modules")
+            out = machine.succeed("reboot-hint")
+            assert "new drivers are used after the next reboot" in out, out
+            assert "new kernel" not in out, out
+
+        with subtest("kernel changed: only the kernel hint"):
+            generation(3, "kernel", "kernel-modules")
+            out = machine.succeed("reboot-hint")
+            assert "new kernel is used after the next reboot" in out, out
+            assert "drivers" not in out, out
+      '';
+    };
+
     # nixos-central upgrade changes nothing when it fails or an auto-upgrade runs.
     upgrade-failures = runTest {
       name = "nixos-central-upgrade-failures";
@@ -1009,6 +1053,89 @@ in
         expect '{ }' "$(cat other.nix)"
         touch $out
       '';
+
+    # The nvidia fact the installer records (detect-nvidia.sh), on fake sysfs trees.
+    nvidia-detect = pkgs.runCommand "nvidia-detect" { } ''
+      set -euo pipefail
+      gpu() { # gpu <tree> <address> <vendor> [class]
+        mkdir -p "$1/bus/pci/devices/$2"
+        echo "$3" > "$1/bus/pci/devices/$2/vendor"
+        echo "''${4:-0x030000}" > "$1/bus/pci/devices/$2/class"
+      }
+      supply() { # supply <tree> <name> <type> [scope]
+        mkdir -p "$1/class/power_supply/$2"
+        echo "$3" > "$1/class/power_supply/$2/type"
+        if [ -n "''${4:-}" ]; then echo "$4" > "$1/class/power_supply/$2/scope"; fi
+      }
+      nvidia=0x10de intel=0x8086 amd=0x1002
+      expect() { # expect <tree> <value>
+        local got
+        got=$(bash ${../installer/detect-nvidia.sh} "$1")
+        [ "$got" = "$2" ] || { printf '%s: expected %s, got %s\n' "$1" "$2" "$got"; exit 1; }
+      }
+
+      # Empty tree, and devices that are no display controllers.
+      mkdir empty
+      expect empty null
+      gpu audio 0000:01:00.1 $nvidia 0x040300
+      gpu audio 0000:00:02.0 $intel
+      supply audio BAT0 Battery System
+      expect audio null
+
+      # Hybrid laptops: the audio function of the NVIDIA GPU is not the GPU.
+      gpu laptop 0000:00:02.0 $intel
+      gpu laptop 0000:01:00.0 $nvidia
+      gpu laptop 0000:01:00.1 $nvidia 0x040300
+      supply laptop AC Mains
+      supply laptop BAT0 Battery System
+      expect laptop '{ intelBusId = "PCI:0@0:2:0"; nvidiaBusId = "PCI:1@0:0:0"; }'
+
+      # Battery that doesn't report a scope.
+      gpu noscope 0000:00:02.0 $intel
+      gpu noscope 0000:01:00.0 $nvidia
+      supply noscope BAT0 Battery
+      expect noscope '{ intelBusId = "PCI:0@0:2:0"; nvidiaBusId = "PCI:1@0:0:0"; }'
+
+      # PCI addresses are hexadecimal, bus IDs decimal; domains too.
+      gpu hex 0000:00:02.0 $intel
+      gpu hex 0000:0a:00.0 $nvidia
+      supply hex BAT0 Battery
+      expect hex '{ intelBusId = "PCI:0@0:2:0"; nvidiaBusId = "PCI:10@0:0:0"; }'
+      gpu domain 0000:00:02.0 $intel
+      gpu domain 10000:1f:0b.0 $nvidia
+      supply domain BAT0 Battery
+      expect domain '{ intelBusId = "PCI:0@0:2:0"; nvidiaBusId = "PCI:31@65536:11:0"; }'
+
+      # AMD integrated GPU.
+      gpu amdlaptop 0000:01:00.0 $nvidia
+      gpu amdlaptop 0000:05:00.0 $amd
+      supply amdlaptop BAT0 Battery System
+      expect amdlaptop '{ amdgpuBusId = "PCI:5@0:0:0"; nvidiaBusId = "PCI:1@0:0:0"; }'
+
+      # NVIDIA as a 3D controller, as on many laptops.
+      gpu threed 0000:00:02.0 $intel
+      gpu threed 0000:01:00.0 $nvidia 0x030200
+      supply threed BAT0 Battery System
+      expect threed '{ intelBusId = "PCI:0@0:2:0"; nvidiaBusId = "PCI:1@0:0:0"; }'
+
+      # Desktop with an enabled integrated GPU: no battery.
+      gpu desktop 0000:00:02.0 $intel
+      gpu desktop 0000:01:00.0 $nvidia
+      expect desktop '{ }'
+
+      # Desktop with a wireless mouse: the peripheral's battery doesn't count.
+      gpu mouse 0000:00:02.0 $intel
+      gpu mouse 0000:01:00.0 $nvidia
+      supply mouse hidpp_battery_0 Battery Device
+      expect mouse '{ }'
+
+      # Laptop whose only display controller is the NVIDIA GPU.
+      gpu dgpu 0000:01:00.0 $nvidia
+      supply dgpu BAT0 Battery System
+      expect dgpu '{ }'
+
+      touch $out
+    '';
 
     # nixos-central private setup changes nothing when the overlay can't be read or
     # the configuration with it can't be activated (offline VM: it can't build).

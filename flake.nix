@@ -210,6 +210,29 @@
               "zsh"
             ];
             actualModules = builtins.attrNames centralLib.centralModules;
+            nvidiaDriver =
+              channel:
+              let
+                inherit
+                  (ciHost "ci-nvidia" {
+                    desktop = "none";
+                    nvidia = { inherit channel; };
+                    testProfile = null;
+                    inherit system;
+                  })
+                  config
+                  ;
+              in
+              pkgs.linkFarm "nvidia-driver-${channel}" [
+                {
+                  name = "userspace";
+                  path = config.hardware.nvidia.package;
+                }
+                {
+                  name = "kernel-modules";
+                  path = builtins.head config.boot.extraModulePackages;
+                }
+              ];
           in
           {
             central-modules =
@@ -326,6 +349,84 @@
               assert (hm unknown).home.file.".nixos-central-overlay-test".text == "from the overlay\n";
               assert hasWarning "has no profile \"nosuch\"" unknown;
               pkgs.writeText "host-profile" "ok";
+
+            # What the nvidia fact configures, on every desktop and for every kind of
+            # machine. Evaluated only; nvidia-driver-* below build the drivers.
+            nvidia-eval =
+              let
+                lib = nixpkgs.lib;
+                host =
+                  desktop: nvidia:
+                  ciHost "ci-nvidia" {
+                    inherit desktop nvidia system;
+                    testProfile = null;
+                  };
+                config = desktop: nvidia: (host desktop nvidia).config;
+                intel = {
+                  intelBusId = "PCI:0@0:2:0";
+                  nvidiaBusId = "PCI:1@0:0:0";
+                };
+                amd = {
+                  amdgpuBusId = "PCI:5@0:0:0";
+                  nvidiaBusId = "PCI:1@0:0:0";
+                };
+                unstable = config "none" { channel = "unstable"; };
+                stable = config "none" { };
+                moduleNames = cfg: map lib.getName cfg.boot.extraModulePackages;
+                hasOffloadCmd = cfg: builtins.any (p: lib.getName p == "nvidia-offload") cfg.environment.systemPackages;
+                isPrime = cfg: cfg.hardware.nvidia.prime.offload.enable && cfg.hardware.nvidia.powerManagement.finegrained && hasOffloadCmd cfg;
+                notPrime = cfg: !cfg.hardware.nvidia.prime.offload.enable && !cfg.hardware.nvidia.powerManagement.finegrained && !hasOffloadCmd cfg;
+                # Forcing the toplevel also runs the assertions.
+                refused = desktop: nvidia: !(builtins.tryEval (host desktop nvidia).config.system.build.toplevel.drvPath).success;
+                desktops = centralLib.desktopNames;
+                plain = map (desktop: config desktop { }) desktops;
+                absent = map (desktop: config desktop null) desktops;
+                # Forced below: every desktop's plain machine and both kinds of hybrid.
+                forced = map (cfg: cfg.system.build.toplevel) (plain ++ [ (config "kde" intel) (config "gnome" amd) ]);
+              in
+              # Every desktop: open kernel modules, nouveau blacklisted, power
+              # management, GPU access for containers, no PRIME without bus IDs.
+              assert builtins.all (
+                cfg:
+                cfg.hardware.nvidia.open
+                && moduleNames cfg == [ "nvidia-open" ]
+                && builtins.elem "nouveau" cfg.boot.blacklistedKernelModules
+                && cfg.hardware.nvidia.powerManagement.enable
+                && cfg.hardware.nvidia-container-toolkit.enable
+                && cfg.virtualisation.docker.daemon.settings.features.cdi
+                && notPrime cfg
+              ) plain;
+              # No fact: nothing NVIDIA.
+              assert builtins.all (
+                cfg:
+                !builtins.elem "nvidia" cfg.services.xserver.videoDrivers
+                && moduleNames cfg == [ ]
+                && !cfg.hardware.nvidia-container-toolkit.enable
+                && !(cfg.virtualisation.docker.daemon.settings ? features)
+              ) absent;
+              # Hybrid laptops.
+              assert isPrime (config "kde" intel);
+              assert (config "kde" intel).hardware.nvidia.prime.intelBusId == "PCI:0@0:2:0";
+              assert isPrime (config "gnome" amd);
+              assert (config "gnome" amd).hardware.nvidia.prime.amdgpuBusId == "PCI:5@0:0:0";
+              # Invalid facts.
+              assert refused "none" { nvidiaBusId = "PCI:1@0:0:0"; };
+              assert refused "none" { intelBusId = "PCI:0@0:2:0"; };
+              assert refused "none" (intel // amd);
+              assert refused "none" { nvidiaBusId = "01:00.0"; };
+              assert refused "none" { channel = "beta"; };
+              # Channels.
+              assert stable.hardware.nvidia.package.version == stable.boot.kernelPackages.nvidiaPackages.production.version;
+              assert unstable.hardware.nvidia.package.version == (host "none" { }).pkgs.unstable.linuxPackages.nvidiaPackages.latest.version;
+              assert lib.hasSuffix "-${unstable.boot.kernelPackages.kernel.version}" (builtins.head unstable.boot.extraModulePackages).name;
+              assert unstable.boot.kernelPackages.kernel.outPath == stable.boot.kernelPackages.kernel.outPath;
+              pkgs.writeText "nvidia-eval" (builtins.unsafeDiscardStringContext (toString (map (toplevel: toplevel.drvPath) forced)));
+
+            # The drivers of both channels build against the system kernel. In
+            # `nix flake check`, so the weekly flake.lock update (flake-update.yml)
+            # doesn't reach machines when one of them stops building.
+            nvidia-driver-stable = nvidiaDriver "stable";
+            nvidia-driver-unstable = nvidiaDriver "unstable";
 
             # Overlays with inputs are refused.
             overlay-rejects-inputs =

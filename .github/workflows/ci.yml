@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: shellcheck
-        run: shellcheck nixos-central-internal/installer/install.sh nixos-central-internal/installer/home-only.sh
+        run: shellcheck nixos-central-internal/installer/install.sh nixos-central-internal/installer/home-only.sh nixos-central-internal/installer/detect-nvidia.sh
 
   # home-only.sh end to end on a non-NixOS distribution (the runner's Ubuntu),
   # starting without Nix.
@@ -79,6 +79,7 @@ jobs:
 
       - uses: DeterminateSystems/nix-installer-action@main
 
-      # Evaluates everything, builds the ci-* sample hosts and runs the VM tests.
+      # Evaluates everything, builds the ci-* sample hosts and the NVIDIA drivers
+      # of both channels and runs the VM tests.
       - name: nix flake check
         run: nix flake check -L
