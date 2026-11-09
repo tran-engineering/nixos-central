@@ -377,6 +377,8 @@ def phase_install(args, repo):
     log("installer: flags, typed confirmation, secrets, private overlay, install")
     vm.send(f"{run_installer} -s -- --hostname e2e-host --user alice --desktop none --keyboard-layout sg --private {PRIVATE_URL}")
     vm.answer(r"Type 'yes' to erase it and install: ", "yes", 900)
+    # The VM has no NVIDIA GPU: no NVIDIA heading or question before the disk.
+    check("NVIDIA" not in vm.p.before, "no NVIDIA GPU: no NVIDIA question asked")
     vm.answer(r"Disk passphrase: ", LUKS)
     vm.answer(r"Repeat to confirm: ", "mismatch")
     vm.answer(r"did not match.*\r\n.*Disk passphrase: ", LUKS)
@@ -398,6 +400,7 @@ def phase_install(args, repo):
     vm.expect(r"Reboot now\? \[Y/n\]: ", 7200)
     summary = vm.p.before
     check(f"overlay   {PRIVATE_URL}" in summary and "profile   ci-overlay" in summary, "summary names overlay and profile")
+    check("NVIDIA    driver" not in summary,"summary has no NVIDIA line without the driver")
     vm.send("n")
     vm.expect(SHELL_PROMPT)
     flake = vm.succeed("sudo cat /mnt/etc/nixos/flake.nix")
@@ -417,7 +420,7 @@ def phase_install(args, repo):
     check(all(f in out for f in ["flake.nix", "flake.lock", "hardware-configuration.nix"]), "/mnt/etc/nixos has flake, lock, hardware config")
     out = vm.succeed("sudo cat /mnt/etc/nixos/flake.nix")
     check('keyboardLayout = "sg";' in out, "keyboard layout fact sg written to the machine flake")
-    check("nvidia = null;" in out, "no NVIDIA GPU: nvidia = null in the machine flake, without a question")
+    check("nvidia = null;" in out, "no NVIDIA GPU: nvidia = null in the machine flake")
     # Inside the target: /mnt/etc/vconsole.conf is an absolute symlink (/etc/static/...)
     # that would resolve into the live system's /etc.
     rc, _ = vm.run("sudo nixos-enter --root /mnt --silent -c \"grep -q '^KEYMAP=sg-latin1$' /etc/vconsole.conf\"")

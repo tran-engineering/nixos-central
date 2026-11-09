@@ -781,7 +781,10 @@ those come from the NixOS binary cache.
 The update notification is tested headless with a stub notification server
 (`reboot-notify`); `desktopTests.reboot-notify-kde`, `-gnome` and
 `-niri-noctalia` check it in a real desktop session and are run by hand, as CI
-runs only `nix flake check`. The niri test also checks that Noctalia loads on
+runs only the flake checks. CI (`.github/workflows/checks.yml`) evaluates them
+like `nix flake check --no-build`, then builds them in shards on separate
+runners, at most two at a time, because all VM tests on one hosted runner run it
+out of memory. The niri test also checks that Noctalia loads on
 the first login into a fresh home.
 `desktop-apps` checks Flatpak, the Flathub remote and the update timers
 offline and the AppImage registration, on a machine without desktop and with

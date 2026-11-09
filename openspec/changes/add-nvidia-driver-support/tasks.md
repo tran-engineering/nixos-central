@@ -25,8 +25,8 @@
 
 ## 5. Installer
 
-- [ ] 5.1 Parse `--nvidia` and `--no-nvidia` and reject both together in `check_flags`; add them to `usage` and the README's options table. Verify with new e2e steps: `--nvidia --no-nvidia` exits before changing a disk, and `--nvidia` in the VM, which has no NVIDIA GPU, explains this and exits before changing a disk.
-- [ ] 5.2 In `collect_machine_facts`, after the desktop question, run detection, then the confirmation prompt with the Turing note and the flag handling. Substitute `@NVIDIA@` in `write_machine_flake` (design D4). Verify with the e2e test: the machine flake has `nvidia = null;`, no NVIDIA question was asked and the installed system builds.
+- [x] 5.1 Parse `--nvidia` and `--no-nvidia` and reject both together in `check_flags`; add them to `usage` and the README's options table. Verify with new e2e steps: `--nvidia --no-nvidia` exits before changing a disk, and `--nvidia` in the VM, which has no NVIDIA GPU, explains this and exits before changing a disk.
+- [x] 5.2 In `collect_machine_facts`, after the desktop question, run detection, then the confirmation prompt with the Turing note and the flag handling. Substitute `@NVIDIA@` in `write_machine_flake` (design D4). Verify with the e2e test: the machine flake has `nvidia = null;`, no NVIDIA question was asked and the installed system builds.
 - [ ] 5.3 Check `download.nvidia.com` when NVIDIA is selected, aborting with the actionable message (design D5). Verify the check is skipped in the e2e run with no NVIDIA GPU, and on real hardware that the message appears with the host blocked, for example with an `/etc/hosts` entry on the live image, and that no disk has changed.
 - [ ] 5.4 Add the NVIDIA line to the `finish` summary, and update "What the installer does" in the README. Verify on this laptop's install (task 7.2) that the summary says PRIME offload.
 
@@ -36,7 +36,7 @@
 
 ## 7. Integration and hardware verification
 
-- [ ] 7.1 Run `nix flake check` and the installer e2e test (`nix run --impure -f nixos-central-internal/tests/e2e`). Both pass.
+- [x] 7.1 Run `nix flake check` and the installer e2e test (`nix run --impure -f nixos-central-internal/tests/e2e`). Both pass.
 - [ ] 7.2 Back up this laptop, then install from an image of the branch with `NIXOS_CENTRAL_FLAKE` set. Verify the installer shows the Intel and NVIDIA GPUs, the summary says PRIME offload, and the machine reaches GDM and logs in to a Wayland session.
 - [ ] 7.3 On this laptop verify: `nvidia-offload glxinfo` reports the NVIDIA GPU while a plain `glxinfo` reports Intel; suspend and resume keep the session; `/sys/bus/pci/devices/0000:01:00.0/power/runtime_status` is `suspended` when idle, including after the CDI generator has run and after a container has exited; `docker run --rm --device nvidia.com/gpu=all <image> nvidia-smi` lists the GPU. Record any failures and resolve them centrally in `modules/base/nvidia.nix`.
 - [x] 7.4 No NVIDIA desktop is available for testing, so the desktop path is verified without hardware: `nvidia-detect` records `nvidia = { }` for a desktop with an enabled iGPU and for one with a wireless mouse's battery, and `nvidia-eval` shows no PRIME, offload command or fine-grained power management for that fact. Verify both checks pass.

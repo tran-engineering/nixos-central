@@ -1,0 +1,83 @@
+name: Flake checks
+
+# The equivalent of `nix flake check`, spread over several runners. On one
+# hosted runner (4 CPUs, 16 GB) Nix ran about four NixOS VM tests at once next
+# to the evaluator holding every check, ran out of memory and took the runner
+# down with it ("lost communication with the server").
+#
+# `eval` evaluates everything without building and splits the checks into
+# shards: the sample hosts, the NVIDIA drivers, and the remaining checks (mostly
+# VM tests) round-robin. Each shard builds on its own runner, at most two
+# derivations at a time. New checks are picked up without editing this file.
+#
+# Used by ci.yml and flake-update.yml.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: "Commit to check (default: the commit of the calling event)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    outputs:
+      shards: ${{ steps.shards.outputs.shards }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - name: nix flake check --no-build
+        run: nix flake check --no-build -L
+
+      - name: Split the checks into shards
+        id: shards
+        env:
+          TEST_SHARDS: 3
+        run: |
+          names=$(nix eval --json .#checks.x86_64-linux --apply builtins.attrNames)
+          shards=$(jq -c --argjson n "$TEST_SHARDS" '
+            def own: startswith("host-ci-") or startswith("nvidia-driver-");
+            [ { name: "sample hosts", checks: map(select(startswith("host-ci-"))) },
+              { name: "NVIDIA drivers", checks: map(select(startswith("nvidia-driver-"))) } ]
+            + ( map(select(own | not)) | to_entries | group_by(.key % $n)
+                | map({ name: "tests \(.[0].key % $n + 1)/\($n)", checks: map(.value) }) )
+            | map(select(.checks != []) | .checks |= join(" "))
+          ' <<<"$names")
+          jq . <<<"$shards"
+          echo "shards=$shards" >>"$GITHUB_OUTPUT"
+
+  build:
+    needs: eval
+    name: build (${{ matrix.shard.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.eval.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+
+      # Sample hosts and VM tests need more than the runner's default free space.
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      # At most two builds at a time: a VM test takes up to 4 GB.
+      - name: nix build
+        env:
+          CHECKS: ${{ matrix.shard.checks }}
+        run: |
+          args=()
+          for check in $CHECKS; do args+=(".#checks.x86_64-linux.$check"); done
+          nix build -L --no-link --keep-going --max-jobs 2 "${args[@]}"

@@ -5,6 +5,11 @@ on:
   push:
     branches: [main]
 
+# A newer push to the same pull request makes the running checks pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   installer:
     runs-on: ubuntu-latest
@@ -68,18 +73,6 @@ jobs:
           test ! -e ~/.nixos-central-overlay-test
           test ! -e ~/.nixos-central-overlay-profile
 
+  # nix flake check, spread over several runners (checks.yml).
   flake:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      # Sample hosts and VM tests need more than the runner's default free space.
-      - name: Free disk space
-        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
-
-      - uses: DeterminateSystems/nix-installer-action@main
-
-      # Evaluates everything, builds the ci-* sample hosts and the NVIDIA drivers
-      # of both channels and runs the VM tests.
-      - name: nix flake check
-        run: nix flake check -L
+    uses: ./.github/workflows/checks.yml
