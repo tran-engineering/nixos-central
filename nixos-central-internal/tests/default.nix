@@ -355,6 +355,7 @@ in
         machine.wait_for_unit("multi-user.target")
         machine.wait_for_unit("flatpak-flathub.service")
         machine.succeed("flatpak remotes --system --columns=name | grep -x flathub")
+        machine.succeed("flatpak remotes --system --columns=name,url | grep -xP 'flathub\\thttps://dl\\.flathub\\.org/repo/'")
         machine.succeed("su - alice -c 'flatpak remotes --columns=name' | grep -x flathub")
 
         # Updates daily and once after each start of the service manager: system

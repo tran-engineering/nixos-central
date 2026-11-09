@@ -56,8 +56,17 @@ in
         Type = "oneshot";
         RemainAfterExit = true;
       };
+      # --from: the input's store path has no .flatpakrepo suffix, and without
+      # it Flatpak takes the path for the repository itself (file:///nix/store/…).
+      # Earlier versions of this module added such a remote; it can hold no
+      # apps, so it is replaced.
       script = ''
-        flatpak remote-add --system --if-not-exists flathub ${inputs.flathub}
+        while IFS=$'\t' read -r name url; do
+          if [[ $name == flathub && $url == file:///nix/store/* ]]; then
+            flatpak remote-delete --system --force flathub
+          fi
+        done < <(flatpak remotes --system --columns=name,url)
+        flatpak remote-add --system --if-not-exists --from flathub ${inputs.flathub}
       '';
     };
 
