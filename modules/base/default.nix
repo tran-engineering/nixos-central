@@ -12,6 +12,7 @@
     ./gc.nix
     ./nvidia.nix
     ./reboot-notify.nix
+    ./tailscale.nix
     ./try.nix
     ./u2f.nix
     ./upgrade.nix
