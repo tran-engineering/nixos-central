@@ -1,0 +1,60 @@
+## MODIFIED Requirements
+
+### Requirement: Machine configuration is a thin local flake
+Each installed machine SHALL have a flake in `/etc/nixos` that consumes the central repository as an input named `central` and declares only machine facts: hostname, primary username, desktop, install disk, keyboard layout, time zone, the NixOS release it was installed with (state version), hardware configuration, and its NVIDIA GPU (see `nvidia-graphics`). It MAY additionally declare one private overlay as an input named `private` (see `private-overlay`) and a profile name (see `user-profiles`). All other system configuration MUST come from the central repository.
+
+#### Scenario: Inspect a machine's config
+- **WHEN** an administrator opens `/etc/nixos` on an installed machine
+- **THEN** it contains the local flake, its lock file, and `hardware-configuration.nix`, and the flake sets only hostname, user, desktop, disk, keyboard layout, time zone, state version, hardware, and NVIDIA GPU, plus the private overlay and profile if they were set up
+
+#### Scenario: Rebuild from local flake
+- **WHEN** a user runs `sudo nixos-rebuild switch --flake /etc/nixos`
+- **THEN** the system builds using the locked revision of the central repository
+
+### Requirement: Central repository exposes a host builder
+The central repository SHALL expose a stable entry point that builds a complete NixOS system from hostname, primary username, desktop name, install disk, state version, extra modules, an optional keyboard layout, an optional time zone, an optional private overlay, an optional profile name, and an optional NVIDIA GPU description. Changes to the central repository MUST NOT require edits to existing machine flakes unless explicitly announced as breaking.
+
+#### Scenario: State version stays fixed
+- **WHEN** the central repository moves to a newer NixOS release
+- **THEN** an existing machine keeps the state version recorded in its local flake
+
+#### Scenario: Central change rolls out
+- **WHEN** a shared module changes in the central repository and a machine updates its `central` input
+- **THEN** the machine picks up the change without editing `/etc/nixos/flake.nix`
+
+#### Scenario: Machine without overlay
+- **WHEN** an existing machine flake doesn't pass a private overlay
+- **THEN** it builds exactly as before
+
+#### Scenario: Machine without profile
+- **WHEN** an existing machine flake doesn't pass a profile
+- **THEN** it builds exactly as before
+
+#### Scenario: Machine without NVIDIA fact
+- **WHEN** an existing machine flake doesn't pass an NVIDIA GPU description
+- **THEN** it builds exactly as before
+
+#### Scenario: Machine without time zone fact
+- **WHEN** an existing machine flake doesn't pass a time zone
+- **THEN** it builds without edits and uses the time zone `Europe/Zurich`
+
+#### Scenario: Add NVIDIA after install
+- **WHEN** a user adds `nvidia = { };` to the `mkHost` call in `/etc/nixos/flake.nix` of an existing machine and rebuilds
+- **THEN** the machine is configured as described in `nvidia-graphics`
+
+## ADDED Requirements
+
+### Requirement: Machine time zone
+Every machine SHALL use the time zone recorded as its `timeZone` fact, an IANA time zone name such as `Europe/Zurich` or `UTC`, for its system clock display, logs and timers. Without the fact, the machine SHALL use `Europe/Zurich`. A machine's own modules MAY set a different time zone without an evaluation conflict.
+
+#### Scenario: Fact recorded by the installer
+- **WHEN** a machine flake sets `timeZone = "America/New_York";` and the machine boots
+- **THEN** `timedatectl` reports the time zone `America/New_York`
+
+#### Scenario: Change the time zone later
+- **WHEN** a user changes `timeZone` in `/etc/nixos/flake.nix` to `Europe/Lisbon` and rebuilds
+- **THEN** the machine uses `Europe/Lisbon` after the rebuild
+
+#### Scenario: Override in machine modules
+- **WHEN** a machine's `modules` set `time.timeZone = "Asia/Tokyo";`
+- **THEN** the machine evaluates without a conflict and uses `Asia/Tokyo`
