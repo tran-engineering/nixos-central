@@ -32,6 +32,13 @@ in
       description = "Default keyboard layout of the machine, for the console and the graphical session. One of the names in nixos-central-internal/lib/keyboard-layouts.nix (us, de, sg = Swiss German, sf = Swiss French).";
     };
 
+    timeZone = lib.mkOption {
+      type = lib.types.strMatching "[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*";
+      default = "Europe/Zurich";
+      example = "America/New_York";
+      description = "Time zone of the machine, an IANA name as listed by `timedatectl list-timezones` (e.g. Europe/Zurich, UTC).";
+    };
+
     profile = lib.mkOption {
       type = lib.types.nullOr (lib.types.strMatching "[A-Za-z0-9._-]+");
       default = null;

@@ -7,9 +7,17 @@
 
 CENTRAL="${NIXOS_CENTRAL_FLAKE:-git+https://github.com/tran-engineering/nixos-central}"
 
-# ask "question": true for yes (the default), false for anything else.
+# ask "question": true for yes (the default), false for anything else. A gum
+# menu on the console; a [Y/n] prompt on serial consoles and with TERM=dumb
+# (or NIXOS_CENTRAL_PLAIN=1), like the installer.
 ask() {
   local reply
+  if [ -z "${NIXOS_CENTRAL_PLAIN:-}" ] && [ "${TERM:-dumb}" != dumb ] && command -v gum >/dev/null &&
+    { : </dev/tty >/dev/tty; } 2>/dev/null; then
+    # Ctrl-C or Esc count as no.
+    gum confirm --default=true "$1" </dev/tty >/dev/null 2>/dev/tty
+    return
+  fi
   read -r -p "$1 [Y/n]: " reply || return 1
   case "$reply" in
   "" | [yY] | [yY][eE][sS]) return 0 ;;

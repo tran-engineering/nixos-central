@@ -327,6 +327,35 @@ in
       '';
     };
 
+    # The time zone fact sets the system time zone; without it the machine
+    # uses Europe/Zurich, and the machine's own modules may override it.
+    time-zone = runTest {
+      name = "nixos-central-time-zone";
+      nodes.recorded = {
+        imports = [
+          (testHost {
+            desktop = "none";
+            timeZone = "America/New_York";
+          })
+        ];
+      };
+      nodes.default = {
+        imports = [ (testHost { desktop = "none"; }) ];
+      };
+      nodes.overridden = {
+        imports = [ (testHost { desktop = "none"; }) ];
+        time.timeZone = "Asia/Tokyo";
+      };
+      testScript = ''
+        start_all()
+        for node, zone in [(recorded, "America/New_York"), (default, "Europe/Zurich"), (overridden, "Asia/Tokyo")]:
+            node.wait_for_unit("multi-user.target")
+            node.wait_until_succeeds("timedatectl show -p Timezone --value")
+            got = node.succeed("timedatectl show -p Timezone --value").strip()
+            assert got == zone, f"{node.name}: expected {zone}, got {got}"
+      '';
+    };
+
     # Flatpak with Flathub, offline (the remote comes from the `flathub`
     # input, already in the store), its update timers, and the AppImage
     # binfmt registrations. Installing from Flathub and running a real

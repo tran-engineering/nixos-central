@@ -47,6 +47,7 @@ let
       disk,
       stateVersion,
       keyboardLayout ? "us", # one of the names in keyboard-layouts.nix
+      timeZone ? "Europe/Zurich", # IANA name, see timedatectl list-timezones
       nvidia ? null, # the NVIDIA GPU (modules/options.nix), or null
       modules ? [ ],
       system ? "x86_64-linux",
@@ -75,6 +76,7 @@ let
             desktop
             disk
             keyboardLayout
+            timeZone
             nvidia
             profile
             ;

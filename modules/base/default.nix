@@ -13,6 +13,7 @@
     ./nvidia.nix
     ./reboot-notify.nix
     ./tailscale.nix
+    ./time-zone.nix
     ./try.nix
     ./u2f.nix
     ./upgrade.nix

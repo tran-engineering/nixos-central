@@ -16,6 +16,7 @@ let
     name = "nixos-central-start";
     runtimeInputs = [
       pkgs.curl
+      pkgs.gum # yes/no menus
       pkgs.networkmanager # nmtui
       config.nix.package
     ];
@@ -34,7 +35,11 @@ in
   # default zstd compression.
   image.baseName = lib.mkForce "nixos-central-${config.system.nixos.release}-${pkgs.stdenv.hostPlatform.uname.processor}";
 
-  environment.systemPackages = [ start ];
+  # gum: the installer's menus, without fetching it first.
+  environment.systemPackages = [
+    start
+    pkgs.gum
+  ];
 
   # Offer the installer on the first console only. Serial consoles, SSH and
   # the other virtual consoles stay plain shells.

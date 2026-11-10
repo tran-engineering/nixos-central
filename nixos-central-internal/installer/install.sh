@@ -27,11 +27,13 @@ init_globals() {
     systemd-resolve systemd-timesync systemd-oom systemd-coredump rtkit avahi geoclue pipewire
     nm-openvpn nm-iodine fwupd-refresh cups lp colord wheel users admin nixos "
 
-  HOST="" USERNAME="" DESKTOP="" DISK="" KEYBOARD_LAYOUT=""
+  DEFAULT_TIME_ZONE=Europe/Zurich
+  HOST="" USERNAME="" DESKTOP="" DISK="" KEYBOARD_LAYOUT="" TIME_ZONE=""
   PRIVATE_URL="" PROFILE=""
   NVIDIA=null NVIDIA_FLAG=0 NO_NVIDIA_FLAG=0
-  HOST_FLAG=0 USER_FLAG=0 DESKTOP_FLAG=0 DISK_FLAG=0 KEYBOARD_LAYOUT_FLAG=0 PRIVATE_FLAG=0 PROFILE_FLAG=0
-  DESKTOPS="" RELEASE="" DISK_ID="" PASSWORD_HASH="" KEYBOARD_LAYOUTS=""
+  HOST_FLAG=0 USER_FLAG=0 DESKTOP_FLAG=0 DISK_FLAG=0 KEYBOARD_LAYOUT_FLAG=0 TIME_ZONE_FLAG=0 PRIVATE_FLAG=0 PROFILE_FLAG=0
+  DESKTOPS="" RELEASE="" DISK_ID="" PASSWORD_HASH="" KEYBOARD_LAYOUTS="" TIME_ZONES=""
+  MENUS=0 GUM="" # gum menus for choices, or plain prompts (setup_menus)
   DEFAULT_PRIVATE="" PROFILES="" KEY_GENERATED=0 INSTALLED=0
   STEP="starting"
 }
@@ -58,6 +60,7 @@ Options:
   --disk DEVICE     disk to erase and install on (default: first internal disk >= 40 GiB)
   --keyboard-layout NAME
                     keyboard layout (default: us): us, de, sg (Swiss German), sf (Swiss French)
+  --time-zone NAME  time zone (default: Europe/Zurich); see: timedatectl list-timezones
   --private URL     set up this private overlay (README, "Private overlay"); generates
                     an SSH key for the user and shows it to add on GitHub
   --profile NAME    profile from the private overlay (needs --private;
@@ -65,6 +68,9 @@ Options:
   --nvidia          install the NVIDIA driver for the GPU found, without asking
   --no-nvidia       don't install the NVIDIA driver, and don't ask
   -h, --help        show this help
+
+Choices are menus on the console. On a serial console, with TERM=dumb or with
+NIXOS_CENTRAL_PLAIN=1 every question is a plain prompt instead.
 EOF
 }
 
@@ -88,7 +94,7 @@ parse_flags() {
         value=${flag#*=}
         flag=${flag%%=*}
         ;;
-      --hostname | --user | --desktop | --disk | --keyboard-layout | --private | --profile)
+      --hostname | --user | --desktop | --disk | --keyboard-layout | --time-zone | --private | --profile)
         [ $# -ge 2 ] || {
           usage
           die "$flag needs a value."
@@ -103,6 +109,7 @@ parse_flags() {
       --desktop) DESKTOP=$value DESKTOP_FLAG=1 ;;
       --disk) DISK=$value DISK_FLAG=1 ;;
       --keyboard-layout) KEYBOARD_LAYOUT=$value KEYBOARD_LAYOUT_FLAG=1 ;;
+      --time-zone) TIME_ZONE=$value TIME_ZONE_FLAG=1 ;;
       --private) PRIVATE_URL=$value PRIVATE_FLAG=1 ;;
       --profile) PROFILE=$value PROFILE_FLAG=1 ;;
       --nvidia) NVIDIA_FLAG=1 ;;
@@ -175,10 +182,123 @@ ask_secret() {
   printf -v "$__var" '%s' "$__first"
 }
 
+# ── menus ─────────────────────────────────────────────────────────────────────
+# Choices are gum menus when the terminal can show them, else plain prompts
+# with the same texts and answers as without menus (serial consoles, the e2e
+# test). Free text, secrets and the wipe confirmation always stay typed.
+
+# Decides MENUS once, after ensure_root (globals don't survive the sudo re-exec).
+setup_menus() {
+  MENUS=0
+  [ -z "${NIXOS_CENTRAL_PLAIN:-}" ] || return 0
+  case "${TERM:-dumb}" in dumb | unknown) return 0 ;; esac
+  # Opening it, not only its permissions: without a controlling terminal it fails.
+  { : </dev/tty >/dev/tty; } 2>/dev/null || return 0
+  if command -v gum >/dev/null; then
+    GUM=$(command -v gum)
+  else
+    local out
+    out=$(nixx build --no-link --print-out-paths --inputs-from "$CENTRAL" nixpkgs#gum 2>/dev/null | head -n1) || out=""
+    if [ -z "$out" ] || [ ! -x "$out/bin/gum" ]; then
+      info "Menus are not available (could not fetch gum); asking with plain prompts."
+      return 0
+    fi
+    GUM=$out/bin/gum
+  fi
+  MENUS=1
+}
+
+# gum on the terminal itself: its screen goes to /dev/tty even when stderr is
+# the install log, and only the answer comes back on stdout.
+menu() { "$GUM" "$@" </dev/tty 2>/dev/tty; }
+
+menu_cancelled() { die "Aborted. Nothing was changed."; }
+
+# ask_until_valid VAR "question" default hint option...: plain prompt, repeated
+# with the hint until the answer is one of the options.
+ask_until_valid() {
+  local __var=$1 __question=$2 __default=$3 __hint=$4
+  shift 4
+  local __options=" $* "
+  while ask "$__var" "$__question" "$__default" && [[ $__options != *" ${!__var} "* ]]; do
+    info "$__hint"
+  done
+}
+
+# choose VAR "question" default intro option...: one of a few options, from a
+# list with the default selected. Plain: the intro line (e.g. "Available
+# desktops: ..."), then a prompt until the answer is one of the options.
+choose() {
+  local __var=$1 __question=$2 __default=$3 __intro=$4 __reply
+  shift 4
+  if [ "$MENUS" = 1 ]; then
+    __reply=$(menu choose --header "$__question" --cursor "> " --selected "$__default" -- "$@") || menu_cancelled
+    info "$__question: $__reply" # the menu disappears; keep the answer on screen
+    printf -v "$__var" '%s' "$__reply"
+  else
+    [ -z "$__intro" ] || info "$__intro"
+    ask_until_valid "$__var" "$__question" "$__default" "Choose one of: $*" "$@"
+  fi
+}
+
+# choose_filtered VAR "question" default hint option...: one of many options,
+# from a list filtered by typing, the default first. Plain: a prompt
+# until the answer is one of the options, with the hint after a wrong one.
+choose_filtered() {
+  local __var=$1 __question=$2 __default=$3 __hint=$4 __reply
+  shift 4
+  if [ "$MENUS" = 1 ]; then
+    # The default comes first, so Enter takes it before anything is typed.
+    local __option __ordered=("$__default")
+    for __option in "$@"; do [ "$__option" = "$__default" ] || __ordered+=("$__option"); done
+    # Enter on a search without matches returns nothing: show the list again.
+    __reply=""
+    while [ -z "$__reply" ]; do
+      __reply=$(menu filter --header "$__question (type to search)" --indicator ">" --placeholder "$__default" -- "${__ordered[@]}") || menu_cancelled
+    done
+    info "$__question: $__reply"
+    printf -v "$__var" '%s' "$__reply"
+  else
+    ask_until_valid "$__var" "$__question" "$__default" "$__hint" "$@"
+  fi
+}
+
+# confirm "question" yes|no [cancel]: true for yes. Plain: [Y/n] or [y/N] with
+# the same answers as before menus. Escape answers no (gum can't tell them
+# apart); Ctrl-C aborts the installer, or counts as no if "cancel" is given
+# (questions after the install).
+confirm() {
+  local question=$1 default=$2 on_cancel=${3:-} answer status=0
+  if [ "$MENUS" = 1 ]; then
+    if [ "$default" = yes ]; then
+      menu confirm --default=true "$question" >/dev/null || status=$?
+    else
+      menu confirm --default=false "$question" >/dev/null || status=$?
+    fi
+    case "$status" in
+      0) return 0 ;;
+      1) return 1 ;;
+      *)
+        [ "$on_cancel" = cancel ] && return 1
+        menu_cancelled
+        ;;
+    esac
+  fi
+  if [ "$default" = yes ]; then
+    ask answer "$question [Y/n]"
+    case "$answer" in "" | y | Y | yes | Yes) return 0 ;; esac
+  else
+    ask answer "$question [y/N]"
+    case "$answer" in y | Y | yes | Yes) return 0 ;; esac
+  fi
+  return 1
+}
+
 valid_hostname() { [[ $1 =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; }
 valid_username() { [[ $1 =~ ^[a-z][a-z0-9_-]{0,31}$ ]] && [[ $RESERVED_USERS != *" $1 "* ]]; }
 valid_desktop() { [[ " $DESKTOPS " == *" $1 "* ]]; }
 valid_keyboard_layout() { [[ " $KEYBOARD_LAYOUTS " == *" $1 "* ]]; }
+valid_time_zone() { [ -n "$1" ] && [[ " $TIME_ZONES " == *" $1 "* ]]; }
 
 random_hostname() {
   local chars=abcdefghijklmnopqrstuvwxyz0123456789 suffix=""
@@ -186,8 +306,8 @@ random_hostname() {
   printf 'nixos-%s' "$suffix"
 }
 
-# Ask for (or validate the flag value of) keyboard layout, hostname, user and
-# desktop. The keyboard layout comes first and is switched to right away, so
+# Ask for (or validate the flag value of) keyboard layout, time zone, hostname,
+# user and desktop. The keyboard layout comes first and is switched to right away, so
 # every following answer (including the disk passphrase) is typed with it.
 collect_machine_facts() {
   heading "Machine"
@@ -196,12 +316,19 @@ collect_machine_facts() {
     valid_keyboard_layout "$KEYBOARD_LAYOUT" ||
       die "Unknown keyboard layout '$KEYBOARD_LAYOUT'. Available: $KEYBOARD_LAYOUTS"
   else
-    info "Available keyboard layouts: $KEYBOARD_LAYOUTS"
-    while ask KEYBOARD_LAYOUT "Keyboard layout" "us" && ! valid_keyboard_layout "$KEYBOARD_LAYOUT"; do
-      info "Choose one of: $KEYBOARD_LAYOUTS"
-    done
+    # shellcheck disable=SC2086 # space-separated names
+    choose KEYBOARD_LAYOUT "Keyboard layout" "us" "Available keyboard layouts: $KEYBOARD_LAYOUTS" $KEYBOARD_LAYOUTS
   fi
   apply_keyboard_layout
+
+  if [ "$TIME_ZONE_FLAG" = 1 ]; then
+    valid_time_zone "$TIME_ZONE" ||
+      die "Unknown time zone '$TIME_ZONE'. See the valid names with: timedatectl list-timezones"
+  else
+    # shellcheck disable=SC2086 # space-separated names
+    choose_filtered TIME_ZONE "Time zone" "$DEFAULT_TIME_ZONE" \
+      "Unknown time zone. See the valid names with: timedatectl list-timezones" $TIME_ZONES
+  fi
 
   if [ "$HOST_FLAG" = 0 ]; then
     local default
@@ -220,10 +347,8 @@ collect_machine_facts() {
   if [ "$DESKTOP_FLAG" = 1 ]; then
     valid_desktop "$DESKTOP" || die "Unknown desktop '$DESKTOP'. Available: $DESKTOPS"
   else
-    info "Available desktops: $DESKTOPS"
-    while ask DESKTOP "Desktop" "kde" && ! valid_desktop "$DESKTOP"; do
-      info "Choose one of: $DESKTOPS"
-    done
+    # shellcheck disable=SC2086 # space-separated names
+    choose DESKTOP "Desktop" "kde" "Available desktops: $DESKTOPS" $DESKTOPS
   fi
 
   collect_nvidia
@@ -245,17 +370,13 @@ collect_nvidia() {
 
   if [ "$NVIDIA_FLAG" = 0 ]; then
     heading "NVIDIA"
-    local gpu answer
+    local gpu
     gpu=$(lspci -d 10de: 2>/dev/null | grep -E 'VGA|3D|Display' || true)
     info "Found: ${gpu:-an NVIDIA GPU}"
     info "To be recorded in the machine's configuration: nvidia = $detected;"
     info "The driver uses NVIDIA's open kernel modules, which need a Turing or newer GPU"
     info "(RTX, GTX 16xx or newer)."
-    ask answer "Install the NVIDIA driver? [Y/n]"
-    case "$answer" in
-      "" | y | Y | yes | Yes) ;;
-      *) return 0 ;;
-    esac
+    confirm "Install the NVIDIA driver?" yes || return 0
   fi
 
   # Any HTTP response will do: this only checks that the server can be reached.
@@ -279,7 +400,7 @@ ensure_root() {
   [ "$(id -u)" -eq 0 ] && return
   command -v sudo >/dev/null || die "Please run this installer as root."
   # The script came through a pipe, so re-run its functions under sudo.
-  exec sudo env NIXOS_CENTRAL_FLAKE="${NIXOS_CENTRAL_FLAKE:-}" \
+  exec sudo env NIXOS_CENTRAL_FLAKE="${NIXOS_CENTRAL_FLAKE:-}" NIXOS_CENTRAL_PLAIN="${NIXOS_CENTRAL_PLAIN:-}" TERM="${TERM:-dumb}" \
     bash -c "$(declare -f); main \"\$@\"" nixos-central-install "$@"
 }
 
@@ -315,6 +436,22 @@ preflight() {
   facts=$(nixx eval --raw "$CENTRAL#lib" --apply 'l: builtins.concatStringsSep "\n" [ l.release (toString l.desktopNames) (toString l.keyboardLayoutNames) l.defaultPrivate ]') ||
     die "Could not load $CENTRAL."
   { read -r RELEASE; read -r DESKTOPS; read -r KEYBOARD_LAYOUTS; read -r DEFAULT_PRIVATE; } <<<"$facts"
+
+  load_time_zones
+  setup_menus
+}
+
+# Valid time zones: the live system's database, which the installed release's
+# matches up to zones added in between.
+load_time_zones() {
+  TIME_ZONES=$(timedatectl list-timezones 2>/dev/null | tr '\n' ' ') || TIME_ZONES=""
+  local dir
+  for dir in /etc/zoneinfo /usr/share/zoneinfo; do
+    [ -z "${TIME_ZONES// /}" ] && [ -d "$dir" ] || continue
+    TIME_ZONES=$(cd "$dir" && find -L . -type f ! -path './posix/*' ! -path './right/*' |
+      sed 's|^\./||' | grep -E '^[A-Z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+)*$' | sort | tr '\n' ' ')
+  done
+  [ -n "${TIME_ZONES// /}" ] || die "Could not read the list of time zones of this live system."
 }
 
 # ── disk ──────────────────────────────────────────────────────────────────────
@@ -401,7 +538,7 @@ hash_password() {
 collect_secrets() {
   heading "Disk encryption"
   info "The disk is encrypted. You will type this passphrase every time the computer starts."
-  local luks password answer
+  local luks password
   ask_secret luks "Disk passphrase"
   (
     umask 077
@@ -409,11 +546,11 @@ collect_secrets() {
   )
 
   heading "Login password"
-  ask answer "Use the disk passphrase as login password for $USERNAME too? [Y/n]"
-  case "$answer" in
-    "" | y | Y | yes | Yes) password=$luks ;;
-    *) ask_secret password "Login password for $USERNAME" ;;
-  esac
+  if confirm "Use the disk passphrase as login password for $USERNAME too?" yes; then
+    password=$luks
+  else
+    ask_secret password "Login password for $USERNAME"
+  fi
   PASSWORD_HASH=$(hash_password "$password")
   [ -n "$PASSWORD_HASH" ] || die "Could not hash the password."
 }
@@ -514,10 +651,8 @@ choose_profile() {
     valid_profile "$PROFILE" || die "The overlay has no profile '$PROFILE'. Available: $PROFILES"
     return
   fi
-  info "Profiles in the overlay: $PROFILES"
-  while ask PROFILE "Profile" "$default" && ! valid_profile "$PROFILE"; do
-    info "Choose one of: $PROFILES"
-  done
+  # shellcheck disable=SC2086 # space-separated names
+  choose PROFILE "Profile" "$default" "Profiles in the overlay: $PROFILES" $PROFILES
 }
 
 # Optional: a private overlay, with a new SSH key for the primary user that is
@@ -527,11 +662,7 @@ collect_private() {
   local answer
   if [ "$PRIVATE_FLAG" = 0 ]; then
     info "A private overlay adds your own setup from a private repository (README, \"Private overlay\")."
-    ask answer "Set up a private overlay? [y/N]"
-    case "$answer" in
-      y | Y | yes | Yes) ;;
-      *) return 0 ;;
-    esac
+    confirm "Set up a private overlay?" no || return 0
     ask PRIVATE_URL "Overlay repository" "$DEFAULT_PRIVATE"
   fi
 
@@ -540,7 +671,12 @@ collect_private() {
   show_public_key
   ask answer "Press Enter when the key is added on GitHub"
   while ! { check_private_access && choose_profile; }; do
-    ask answer "Retry, or skip the overlay? (r/s)" "r"
+    if [ "$MENUS" = 1 ]; then
+      answer=$(menu choose --header "The overlay can't be read yet." --cursor "> " -- "Retry" "Skip the overlay") || menu_cancelled
+      [ "$answer" = Retry ] || answer=s
+    else
+      ask answer "Retry, or skip the overlay? (r/s)" "r"
+    fi
     case "$answer" in
       s | S | skip)
         PRIVATE_URL="" PROFILE=""
@@ -585,6 +721,7 @@ write_machine_flake() {
     -e "s|@DISK@|$(sed_escape "$DISK_ID")|g" \
     -e "s|@KEYBOARD_LAYOUT@|$KEYBOARD_LAYOUT|g" \
     -e "s|@KEYBOARD_LAYOUTS@|$KEYBOARD_LAYOUTS|g" \
+    -e "s|@TIME_ZONE@|$(sed_escape "$TIME_ZONE")|g" \
     -e "s|@STATE_VERSION@|$RELEASE|g" \
     -e "s|@NVIDIA@|$(sed_escape "$NVIDIA")|g" \
     "$template/flake.nix" >"$WORK/flake.nix"
@@ -650,6 +787,7 @@ finish() {
   info "    user      $USERNAME"
   info "    desktop   $DESKTOP"
   info "    keyboard  $KEYBOARD_LAYOUT"
+  info "    time zone $TIME_ZONE"
   info "    disk      $DISK_ID"
   case "$NVIDIA" in
     null) ;;
@@ -665,12 +803,11 @@ finish() {
   fi
   info ""
   info "Remove the USB stick when the computer restarts."
-  local answer
-  ask answer "Reboot now? [Y/n]"
-  case "$answer" in
-    "" | y | Y | yes | Yes) systemctl reboot ;;
-    *) info "Not rebooting. The new system is still mounted at /mnt." ;;
-  esac
+  if confirm "Reboot now?" yes cancel; then
+    systemctl reboot
+  else
+    info "Not rebooting. The new system is still mounted at /mnt."
+  fi
 }
 
 main() {

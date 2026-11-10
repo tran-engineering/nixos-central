@@ -85,6 +85,7 @@ sh install.sh
 | `--desktop NAME` | asked, suggests `kde` | one of the [desktops](#desktops) |
 | `--disk DEVICE` | first internal disk ≥ 40 GiB | still needs the typed confirmation |
 | `--keyboard-layout NAME` | asked, suggests `us` | `us`, `de`, `sg` (Swiss German), `sf` (Swiss French) |
+| `--time-zone NAME` | asked, suggests `Europe/Zurich` | a name from `timedatectl list-timezones`, e.g. `Europe/Berlin` or `UTC` |
 | `--private URL` | asked, suggests no overlay | flake URL of your [private overlay](#private-overlay); the question suggests the shared overlay |
 | `--profile NAME` | asked, suggests your username if the overlay has it, else `default` | a profile of the overlay; only together with `--private` |
 | `--nvidia` | asked if an NVIDIA GPU is found, suggests yes | installs the [NVIDIA driver](#nvidia-graphics) without asking; stops if no NVIDIA GPU is found |
@@ -93,12 +94,21 @@ sh install.sh
 Values passed as options are not asked for; invalid option values stop the
 installer before anything is changed.
 
+On the console, choices are menus: move with the arrow keys and press Enter,
+and the suggested answer is already selected. In the time zone list, type
+part of the name to search (e.g. `lisb`). Esc answers *no* to a yes/no
+question; Ctrl-C stops the installer before the disk is touched. On a serial
+console, with `TERM=dumb`, or with `NIXOS_CENTRAL_PLAIN=1`, every question is
+a plain prompt instead, e.g. `Desktop [kde]:`; the typed `yes` before the disk
+is erased and the passwords are always typed.
+
 ### What the installer does
 
 1. Checks it runs on the NixOS live image, booted in UEFI mode, with access to GitHub.
 2. Asks for the keyboard layout first and switches this console to it, so the
    following answers — including the disk passphrase — are typed with it. Then
-   asks for hostname, username and desktop (unless given as options). If it finds
+   asks for the time zone, hostname, username and desktop (unless given as
+   options). If it finds
    an NVIDIA GPU, it shows it and offers the [driver](#nvidia-graphics) (default:
    yes); if you accept, it also checks that `download.nvidia.com` can be reached.
 3. Picks the disk: the first whole disk of at least 40 GiB that is not removable,
@@ -204,6 +214,7 @@ comes from this repository (the `central` input):
       desktop = "kde";
       disk = "/dev/disk/by-id/nvme-...";
       keyboardLayout = "sg";
+      timeZone = "Europe/Zurich"; # e.g. Europe/Zurich; list: timedatectl list-timezones
       stateVersion = "26.05";  # release the machine was installed with; never change
       nvidia = null;           # the machine's NVIDIA GPU, if any
       modules = [ ./hardware-configuration.nix ];
@@ -221,15 +232,17 @@ comes from this repository (the `central` input):
 | `desktop` | one of the [desktops](#desktops) |
 | `disk` | disk the system was installed on |
 | `keyboardLayout` | keyboard layout: `us`, `de`, `sg` (Swiss German) or `sf` (Swiss French); console and graphical session |
+| `timeZone` | optional: time zone, a name from `timedatectl list-timezones` (e.g. `Europe/Zurich`, `UTC`); default `Europe/Zurich` |
 | `stateVersion` | NixOS release at install time |
 | `nvidia` | optional: the machine's NVIDIA GPU (see [NVIDIA graphics](#nvidia-graphics)); default `null`, no driver |
 | `profile` | optional: profile of the [private overlay](#private-overlay) to use instead of `user`'s name (see [Users and profiles](#users-and-profiles)); the account keeps the name `user`. Without an overlay it has no effect (the build warns) |
 | `private` | optional: the [private overlay](#private-overlay) flake |
 | `modules` | extra NixOS modules; the installer adds `hardware-configuration.nix` |
 
-To change the desktop or keyboard layout later, edit `desktop` or
-`keyboardLayout` in `/etc/nixos/flake.nix` and run
-`sudo nixos-rebuild switch --flake /etc/nixos`.
+To change the desktop, keyboard layout or time zone later, edit `desktop`,
+`keyboardLayout` or `timeZone` in `/etc/nixos/flake.nix` and run
+`sudo nixos-rebuild switch --flake /etc/nixos`. A machine flake without
+`timeZone` uses `Europe/Zurich`. The clock is synced over NTP.
 
 ### Desktops
 
@@ -809,6 +822,8 @@ the first login into a fresh home.
 offline and the AppImage registration, on a machine without desktop and with
 the switch set by hand; installing from Flathub and the app stores need
 network and are checked by hand.
+`time-zone` checks that the `timeZone` fact sets the system time zone, that
+`Europe/Zurich` is the default, and that a machine's `modules` can override it.
 `envfs` checks that `/usr/bin/<name>` and `/bin/<name>` follow the caller's
 `PATH` (also inside `nix shell`) and that `sh`, `env` and `bash` resolve without
 one, including from a service.

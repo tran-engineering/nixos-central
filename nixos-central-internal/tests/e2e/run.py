@@ -257,7 +257,7 @@ def live_vm(args, **kw):
 
 def phase_variants(args):
     """Failure paths and the reuse-passphrase install (tasks 5.2, 5.4, 5.5)."""
-    flags = "-s -- --hostname variant --user alice --desktop none"
+    flags = "-s -- --hostname variant --user alice --desktop none --time-zone Europe/Zurich"
 
     log("preflight: legacy BIOS boot is refused")
     make_disks(args)
@@ -291,6 +291,12 @@ def phase_variants(args):
     vm.expect(r"--nvidia was passed, but this computer has no NVIDIA GPU", 900)
     vm.expect(SHELL_PROMPT)
     check("EMPTY" in vm.succeed("sudo blkid /dev/vda || echo EMPTY"), "--nvidia without a GPU: aborted, disk untouched")
+
+    log("flags: unknown time zone")
+    vm.send(f"{RUN_INSTALLER} {flags.replace('Europe/Zurich', 'Bogus/Zone')} --keyboard-layout us")
+    vm.expect(r"Unknown time zone 'Bogus/Zone'\. See the valid names with: timedatectl list-timezones", 900)
+    vm.expect(SHELL_PROMPT)
+    check("EMPTY" in vm.succeed("sudo blkid /dev/vda || echo EMPTY"), "unknown --time-zone: aborted, disk untouched")
 
     log("preflight: no network")
     vm.succeed(f"curl -sLo /tmp/install.sh http://{HOST_IP}:{PORT}/install.sh && sudo nmcli networking off")
@@ -348,6 +354,7 @@ def phase_install(args, repo):
     vm.send(start)
     vm.answer(r"Install nixos-central on this computer\? \[Y/n\]: ", "", 120)
     vm.answer(r"Keyboard layout \[us\]: ", "us", 900)
+    vm.answer(r"Time zone \[Europe/Zurich\]: ", "")
     vm.expect(r"Hostname \[nixos-[a-z0-9]{4}\]: ")
     check(True, "accepted start: the current installer asks for the hostname")
     vm.p.sendcontrol("c")
@@ -358,6 +365,8 @@ def phase_install(args, repo):
     vm.answer(r"Keyboard layout \[us\]: ", "qwertz", 900)
     layouts = re.escape(" ".join(keyboard_layouts(args.repo)))
     vm.answer(rf"Choose one of: {layouts}.*\r\n.*Keyboard layout \[us\]: ", "us")
+    vm.answer(r"Time zone \[Europe/Zurich\]: ", "CET+1")
+    vm.answer(r"Unknown time zone\. See the valid names with: timedatectl list-timezones.*\r\n.*Time zone \[Europe/Zurich\]: ", "Europe/Lisbon")
     vm.answer(r"Hostname \[nixos-[a-z0-9]{4}\]: ", "Bad_Host")
     vm.answer(r"lowercase letters.*\r\n.*Hostname \[nixos-[a-z0-9]{4}\]: ", "e2e-host")
     vm.answer(r"Your username: ", "Alice Smith")
@@ -375,7 +384,7 @@ def phase_install(args, repo):
     check("EMPTY" in out, "declined wipe left /dev/vda untouched")
 
     log("installer: flags, typed confirmation, secrets, private overlay, install")
-    vm.send(f"{run_installer} -s -- --hostname e2e-host --user alice --desktop none --keyboard-layout sg --private {PRIVATE_URL}")
+    vm.send(f"{run_installer} -s -- --hostname e2e-host --user alice --desktop none --keyboard-layout sg --time-zone America/New_York --private {PRIVATE_URL}")
     vm.answer(r"Type 'yes' to erase it and install: ", "yes", 900)
     # The VM has no NVIDIA GPU: no NVIDIA heading or question before the disk.
     check("NVIDIA" not in vm.p.before, "no NVIDIA GPU: no NVIDIA question asked")
@@ -400,6 +409,7 @@ def phase_install(args, repo):
     vm.expect(r"Reboot now\? \[Y/n\]: ", 7200)
     summary = vm.p.before
     check(f"overlay   {PRIVATE_URL}" in summary and "profile   ci-overlay" in summary, "summary names overlay and profile")
+    check("time zone America/New_York" in summary, "summary names the time zone")
     check("NVIDIA    driver" not in summary,"summary has no NVIDIA line without the driver")
     vm.send("n")
     vm.expect(SHELL_PROMPT)
@@ -420,6 +430,7 @@ def phase_install(args, repo):
     check(all(f in out for f in ["flake.nix", "flake.lock", "hardware-configuration.nix"]), "/mnt/etc/nixos has flake, lock, hardware config")
     out = vm.succeed("sudo cat /mnt/etc/nixos/flake.nix")
     check('keyboardLayout = "sg";' in out, "keyboard layout fact sg written to the machine flake")
+    check('timeZone = "America/New_York";' in out, "time zone fact written to the machine flake")
     check("nvidia = null;" in out, "no NVIDIA GPU: nvidia = null in the machine flake")
     # Inside the target: /mnt/etc/vconsole.conf is an absolute symlink (/etc/static/...)
     # that would resolve into the live system's /etc.
@@ -480,6 +491,7 @@ def phase_installed(args, repo):
     rc, _ = sudo(vm, "true")
     check(rc == 0, "primary user can sudo with the chosen password")
     check("KEYMAP=sg-latin1" in vm.succeed("cat /etc/vconsole.conf"), "chosen keyboard layout active on the console")
+    check("America/New_York" in vm.succeed("timedatectl show -p Timezone --value"), "chosen time zone active")
     out = vm.succeed("ls /etc/nixos")
     check(out.split()[-3:] == ["flake.lock", "flake.nix", "hardware-configuration.nix"], "/etc/nixos holds only flake, lock, hardware config")
     rc, _ = vm.run("systemctl is-active display-manager")
