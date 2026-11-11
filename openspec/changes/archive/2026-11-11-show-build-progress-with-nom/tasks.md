@@ -45,7 +45,7 @@
 
   Keep the copy of the helper commented as a copy of `lib/build-progress.sh`. Verify with `nix run --impure -f nixos-central-internal/tests/e2e`, which runs the plain path: the installed VM boots and the later phases pass.
 - [x] 3.3 Add `pkgs.nix-output-monitor` to `environment.systemPackages` in `nixos-central-internal/iso/default.nix`, next to gum. Update the comment. Verify with `nix build .#packages.x86_64-linux.iso`, and check that `nom` is in the image's system path (`nix path-info -r` of the ISO's toplevel contains `nix-output-monitor`).
-- [ ] 3.4 Check the nom path by hand: boot the ISO in QEMU with a graphical console (or install in a VM from the console), and confirm three things:
+- [x] 3.4 Check the nom path by hand: boot the ISO in QEMU with a graphical console (or install in a VM from the console), and confirm three things:
   - the live display is shown during "installing NixOS"
   - `/tmp/nixos-central-install.log` holds `@nix {` JSON lines and no `\x1b[` cursor-movement sequences
   - an install with a deliberately broken configuration (e.g. `NIXOS_CENTRAL_FLAKE` pointing to a branch with an evaluation error) shows the error and the `on_error` message
@@ -67,7 +67,7 @@
 ## 5. Integration
 
 - [x] 5.1 Run `nix flake check` and `nix run --impure -f nixos-central-internal/tests/e2e`. Both must pass, including the e2e `nixos-central upgrade` phase on the plain path.
-- [ ] 5.2 On a real machine, run `nixos-central upgrade` from a terminal after a central commit, and confirm the live display, activation, and the reboot hint at the end.
+- [x] 5.2 On a real machine, run `nixos-central upgrade` from a terminal after a central commit, and confirm the live display, activation, and the reboot hint at the end.
 
 ## Workflow follow-up
 
