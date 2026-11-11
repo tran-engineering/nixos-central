@@ -53,6 +53,8 @@
   Note the result in the PR.
 - [x] 3.5 README "Install": a sentence that the installation step shows live build progress on the console, plain on serial consoles or with `NIXOS_CENTRAL_PLAIN=1`, and that the log then contains Nix's JSON log lines. Verify that `usage` in `install.sh` describes `NIXOS_CENTRAL_PLAIN` the same way.
 
+- [x] 3.6 Fix the nom errors (`DerivationReadError … openFile: does not exist`) seen in the manual install (3.4). `build_into_target` in `install.sh` writes the build plan into the live store (`nix eval --raw "<installable>.drvPath"`) before building into `/mnt`, only when nom is used (design §4). Extend the `build-progress` VM test to run `install.sh`'s functions against a separate store: the control subtest without the step shows `DerivationReadError`, and the fixed path shows none and writes `@nix {` lines without redraws to the install log. Verify with `nix build .#checks.x86_64-linux.build-progress` and a new e2e run (plain path).
+
 ## 4. Home installer
 
 - [x] 4.1 In `home-only.sh`:

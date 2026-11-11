@@ -257,14 +257,27 @@ build_with_progress() {
   fi
 }
 
-# Builds the system into /mnt's store like nixos-install --flake does (store,
-# substituters, temporary files on the target disk), then installs that build.
-install_nixos() {
-  local tmp TMPDIR
-  tmp=$(mktemp -d -p /mnt)
+# build_into_target <root> <out-link> <installable>
+# Builds into <root>'s store like nixos-install --flake does (store,
+# substituters, temporary files on the target disk). nom reads the build plan
+# (.drv files) from the live system's /nix/store, but this build writes it to
+# <root>'s store; with nom, evaluate the plan into the live store first.
+build_into_target() {
+  local root=$1 link=$2 installable=$3 tmp TMPDIR
+  tmp=$(mktemp -d -p "$root")
   export TMPDIR=$tmp
-  build_with_progress "$tmp/system" --store /mnt --extra-substituters 'auto?trusted=1' \
-    "/mnt/etc/nixos#nixosConfigurations.\"$HOST\".config.system.build.toplevel"
+  if [ -n "$NOM" ]; then
+    info "Preparing the build ..."
+    nixx eval --raw "$installable.drvPath" >/dev/null
+  fi
+  build_with_progress "$link" --store "$root" --extra-substituters 'auto?trusted=1' "$installable"
+  rm -rf "$tmp"
+}
+
+install_nixos() {
+  local tmp
+  tmp=$(mktemp -d -p /mnt)
+  build_into_target /mnt "$tmp/system" "/mnt/etc/nixos#nixosConfigurations.\"$HOST\".config.system.build.toplevel"
   nixos-install --root /mnt --system "$(readlink -f "$tmp/system")" --no-root-passwd --no-channel-copy
   rm -rf "$tmp"
 }

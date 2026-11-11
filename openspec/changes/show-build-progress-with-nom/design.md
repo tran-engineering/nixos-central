@@ -96,12 +96,26 @@ nix build ... --log-format internal-json -v 2>&1 | tee -a "$LOG" | nom --json >/
 
 The upgrade scripts and `home-only.sh` have no log file and pipe straight into `nom --json`.
 
+#### The build plan has to be in the live store
+
+nom reads each `.drv` file directly from its `/nix/store/...` path to build its tree. With `--store /mnt`, Nix writes them to `/mnt/nix/store`, so nom reports `DerivationReadError … openFile: does not exist` for every derivation. The build itself still succeeds. This was found during a manual installation (task 3.4).
+
+So on the nom path, `build_into_target` first runs `nix eval --raw "<installable>.drvPath"` without `--store`, after printing "Preparing the build …". Evaluating `drvPath` writes the whole build plan into the live store at the same paths, because both stores use `/nix/store` as their store directory. The plain path skips this step.
+
+- *Cost:* one more evaluation, during which nothing is shown except that line. It also puts the `.drv` files in the live image's RAM. The flake sources are mostly in the live store already, because `preflight` evaluates `$CENTRAL#lib`.
+- *Alternatives rejected:*
+  - building in the live store and copying to `/mnt`: the whole system would sit in RAM
+  - running nom in a mount namespace with `/mnt/nix/store` mounted at `/nix/store`: nom's own program lives in the live store
+  - no nom in the installer: drops the feature
+- *Test:* the `build-progress` VM test loads `install.sh`'s functions (all but its last line, `main "$@"`) and builds into a separate store under `script`. A control subtest without the extra step must show `DerivationReadError`, which proves the test reproduces the problem. The main subtest must show none.
+
 ### 5. Exit status
 
 All callers run with `pipefail`, so the pipe fails when `nix build` fails, whatever nom returns. nom also exits non-zero when the build fails, but we don't rely on that. Under `install.sh`'s `set -E` the `ERR` trap fires on a failed pipe as on a failed `nixos-install` today.
 
 ## Risks / Trade-offs
 
+- [The extra evaluation of the build plan makes the installation pause, and its `.drv` files use live-image RAM] → Only on the nom path, announced with "Preparing the build …". `NIXOS_CENTRAL_PLAIN=1` skips it.
 - [Building with `--store /mnt` could resolve or substitute differently from `nixos-install --flake`] → Use the same `--extra-substituters 'auto?trusted=1'` and `--store /mnt`. The e2e test installs a real VM on the plain path, which runs the same build step, so it covers this.
 - [Explicit `#$USER` changes which configuration is picked for a hand-edited home flake that also defines `user@host`] → Homes from the installer define only `$USER`. Mention it in the README section on standalone homes.
 - [nom looks wrong on unusual terminals (the Linux console without Unicode fonts, small windows)] → `NIXOS_CENTRAL_PLAIN=1` turns it off. The installation image's console is the main case to check by hand.

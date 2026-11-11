@@ -793,6 +793,36 @@ in
           shift 2
           build_with_progress "$link" --file ${drv} --argstr name "$name" "$@"
         '';
+        # install.sh's own functions (all but its last line, which runs main):
+        # the system is built into another store (/mnt during installation).
+        installerBuild = pkgs.writeShellScriptBin "installer-build" ''
+          source <(sed '$d' ${../installer/install.sh})
+          set -Eeuo pipefail
+          init_globals
+          NOM=$(command -v nom)
+          mkdir -p /target
+          case "$1" in
+            target) build_into_target /target "/tmp/$2" "path:/tmp/flake#$2" ;;
+            # Control: without the build plan in the live store, as before the fix.
+            no-plan) build_with_progress "/tmp/$2" --store /target --extra-substituters 'auto?trusted=1' "path:/tmp/flake#$2" ;;
+          esac
+        '';
+        # Packages with a dependency each, built offline with /bin/sh.
+        installerFlake = pkgs.writeText "flake.nix" ''
+          {
+            outputs = _: let
+              mk = name: args: derivation {
+                inherit name;
+                system = "x86_64-linux";
+                builder = "/bin/sh";
+                args = [ "-c" "echo ''${args} > $out" ];
+              };
+            in {
+              control = mk "control" (mk "control-dep" "");
+              install = mk "install" (mk "install-dep" "");
+            };
+          }
+        '';
       in
       runTest {
         name = "nixos-central-build-progress";
@@ -800,6 +830,7 @@ in
           imports = [ (testHost { desktop = "none"; }) ];
           environment.systemPackages = [
             buildTest
+            installerBuild
             pkgs.nix-output-monitor
           ];
         };
@@ -844,6 +875,31 @@ in
                   assert rc != 0, repr(out)
                   assert "build-error-marker" in out, repr(out)
                   assert not redraw.search(out), repr(out)
+
+          machine.succeed("mkdir -p /tmp/flake && cp ${installerFlake} /tmp/flake/flake.nix")
+
+          def installer(mode, name):
+              cmd = f"stty cols 120 rows 40; TERM=xterm-256color installer-build {mode} {name}"
+              return machine.execute(f"script -qec {shlex.quote(cmd)} /dev/null </dev/null 2>&1")
+
+          with subtest("installer, other store, control: nom can't read the build plan"):
+              rc, out = installer("no-plan", "control")
+              assert rc == 0, repr(out)
+              assert "DerivationReadError" in out, repr(out)
+
+          with subtest("installer, other store: build plan prepared, no nom errors"):
+              rc, out = installer("target", "install")
+              assert rc == 0, repr(out)
+              assert "Preparing the build" in out, repr(out)
+              assert "DerivationReadError" not in out and "nix-output-monitor error" not in out, repr(out)
+              assert redraw.search(out), repr(out)
+              machine.succeed("test -L /tmp/install")
+              # Built in the target store, not the live one.
+              machine.succeed("test -e /target$(readlink /tmp/install)")
+              machine.fail("test -e $(readlink /tmp/install)")
+              install_log = machine.succeed("cat /tmp/nixos-central-install.log")
+              assert "@nix {" in install_log, repr(install_log)
+              assert not redraw.search(install_log), repr(install_log)
 
           with subtest("not a terminal: plain log lines"):
               rc, out = machine.execute("set -o pipefail; TERM=xterm-256color build-test /tmp/pipe-ok pipe-ok 2>&1 | cat")
