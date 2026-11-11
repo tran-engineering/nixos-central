@@ -409,24 +409,6 @@ you don't use that code, turn it off on the key with
 session without your password; no PIN is asked. Keep the key with you, and
 remove a lost key from the file on every machine.
 
-## Tailscale
-
-Every machine runs the [Tailscale](https://tailscale.com) daemon. It stays
-idle until you sign in once, without sudo:
-
-```sh
-tailscale up
-```
-
-The sign-in stays on the machine (`/var/lib/tailscale`), never in a
-repository; `tailscale logout` signs the machine out again. A tray app is up
-to your profile (e.g. `ktailctl` on KDE).
-
-On [other distributions](#install-on-another-linux-distribution), install
-Tailscale from the distribution or with
-`curl -fsSL https://tailscale.com/install.sh | sh`; a home can't run the
-daemon.
-
 ## Users and profiles
 
 The primary user's environment is built with [home-manager](https://github.com/nix-community/home-manager)
