@@ -270,12 +270,44 @@ write_home_flake() {
   info "Wrote $HM_DIR/flake.nix"
 }
 
+# build_with_progress <out-link> <nix build arguments...>
+# Copy of nixos-central-internal/lib/build-progress.sh (also copied into
+# install.sh). Keep in step. Other distributions rarely have nom installed, so
+# it is fetched from the central repository's nixpkgs when it is not on PATH.
+build_with_progress() {
+  local link=$1 nom=""
+  shift
+  if [ -z "${NIXOS_CENTRAL_PLAIN:-}" ] && [ -t 2 ]; then
+    case "${TERM:-dumb}" in
+      dumb | unknown) ;;
+      *)
+        nom=$(command -v nom) ||
+          nom=$(nixx build --no-link --print-out-paths --inputs-from "$CENTRAL" nixpkgs#nix-output-monitor 2>/dev/null | head -n1)/bin/nom ||
+          nom=""
+        if [ -x "$nom" ]; then
+          nixx build "$@" --out-link "$link" --log-format internal-json -v 2>&1 | "$nom" --json
+          return
+        fi
+        info "Build progress is shown as plain output (could not fetch nix-output-monitor)."
+        ;;
+    esac
+  fi
+  # TERM=dumb: Nix's line logger, without progress bar redraws.
+  TERM=dumb nixx build "$@" --out-link "$link"
+}
+
 # First switch, with the home-manager release the central repository pins.
-# Files it would replace are kept with a .backup suffix.
+# Built first (with live progress on a terminal); home-manager then only
+# evaluates again. Files it would replace are kept with a .backup suffix.
 activate_home() {
+  local tmp
   info "Building and activating your environment (this may take a while) ..."
+  tmp=$(mktemp -d)
+  build_with_progress "$tmp/home" "$HM_DIR#homeConfigurations.\"$USERNAME\".activationPackage" ||
+    die "The build failed; your current environment is still active. Fix the problem and run the installer again (with --replace-existing)."
   nixx run "$CENTRAL#home-manager" -- switch --flake "$HM_DIR#$USERNAME" -b backup ||
     die "Activation failed; your current environment is still active. Fix the problem and run the installer again (with --replace-existing)."
+  rm -rf "$tmp"
 }
 
 gpu_setup_command() {

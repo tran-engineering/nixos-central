@@ -769,6 +769,90 @@ in
       '';
     };
 
+    # build_with_progress (lib/build-progress.sh): nom's live display on a
+    # terminal, plain log lines otherwise; a failed build fails either way.
+    # `script` provides the terminal.
+    build-progress =
+      let
+        drv = pkgs.writeText "build-progress-drv.nix" ''
+          { name, fail ? false }:
+          derivation {
+            inherit name;
+            system = builtins.currentSystem;
+            builder = "/bin/sh";
+            args = [
+              "-c"
+              (if fail then "echo build-error-marker; exit 1" else "echo done > $out")
+            ];
+          }
+        '';
+        buildTest = pkgs.writeShellScriptBin "build-test" ''
+          set -euo pipefail
+          ${builtins.readFile ../lib/build-progress.sh}
+          link=$1 name=$2
+          shift 2
+          build_with_progress "$link" --file ${drv} --argstr name "$name" "$@"
+        '';
+      in
+      runTest {
+        name = "nixos-central-build-progress";
+        nodes.machine = {
+          imports = [ (testHost { desktop = "none"; }) ];
+          environment.systemPackages = [
+            buildTest
+            pkgs.nix-output-monitor
+          ];
+        };
+        testScript = ''
+          import re, shlex
+
+          # Cursor movement, line erasing or cursor hiding: a redrawing display.
+          redraw = re.compile(r"\x1b\[[0-9;?]*[ABCDGHJKlh]")
+
+          def build(env, name, *args):
+              cmd = f"stty cols 120 rows 40; {env} build-test /tmp/{name} {name} {' '.join(args)}"
+              return machine.execute(f"script -qec {shlex.quote(cmd)} /dev/null </dev/null 2>&1")
+
+          machine.wait_for_unit("multi-user.target")
+
+          with subtest("terminal: live display, result linked"):
+              rc, out = build("TERM=xterm-256color", "nom-ok")
+              assert rc == 0, repr((rc, out))
+              machine.succeed("test -e /tmp/nom-ok")
+              assert redraw.search(out), repr(out)
+
+          with subtest("terminal: failed build fails, error visible"):
+              rc, out = build("TERM=xterm-256color", "nom-fail", "--arg fail true")
+              assert rc != 0, repr(out)
+              assert "build-error-marker" in out, repr(out)
+              machine.fail("test -e /tmp/nom-fail")
+
+          for label, env in [
+              ("TERM=dumb", "TERM=dumb"),
+              ("NIXOS_CENTRAL_PLAIN", "TERM=xterm-256color NIXOS_CENTRAL_PLAIN=1"),
+          ]:
+              tag = label.split("=")[0].lower()
+              with subtest(f"{label}: plain log lines"):
+                  rc, out = build(env, f"plain-{tag}-ok")
+                  assert rc == 0, repr(out)
+                  machine.succeed(f"test -e /tmp/plain-{tag}-ok")
+                  assert "building" in out, repr(out)
+                  assert not redraw.search(out), repr(out)
+
+              with subtest(f"{label}: failed build fails, error visible"):
+                  rc, out = build(env, f"plain-{tag}-fail", "--arg fail true")
+                  assert rc != 0, repr(out)
+                  assert "build-error-marker" in out, repr(out)
+                  assert not redraw.search(out), repr(out)
+
+          with subtest("not a terminal: plain log lines"):
+              rc, out = machine.execute("set -o pipefail; TERM=xterm-256color build-test /tmp/pipe-ok pipe-ok 2>&1 | cat")
+              assert rc == 0, repr(out)
+              machine.succeed("test -e /tmp/pipe-ok")
+              assert not redraw.search(out), repr(out)
+        '';
+      };
+
     # nixos-central upgrade changes nothing when it fails or an auto-upgrade runs.
     upgrade-failures = runTest {
       name = "nixos-central-upgrade-failures";

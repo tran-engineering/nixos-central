@@ -15,6 +15,7 @@ let
       config.nix.package
       pkgs.coreutils
       config.systemd.package
+      pkgs.nix-output-monitor # build progress (build_with_progress)
     ];
     text = ''
       update_inputs=(${lib.escapeShellArgs (import ./central-update-inputs.nix config)})
@@ -40,7 +41,8 @@ let
       esac
 
       if [ "$(id -u)" -ne 0 ]; then
-        exec sudo "$0" "$@"
+        # sudo resets the environment; keep what decides the build display.
+        exec sudo env NIXOS_CENTRAL_PLAIN="''${NIXOS_CENTRAL_PLAIN:-}" TERM="''${TERM:-dumb}" "$0" "$@"
       fi
 
       # A running oneshot is "activating", which `systemctl is-active` reports as inactive.
@@ -54,12 +56,18 @@ let
       # The lock file is updated before building; put it back if the
       # upgrade fails before a new generation was installed.
       lock=/etc/nixos/flake.lock
-      backup=$(mktemp)
-      trap 'rm -f "$backup"' EXIT
+      tmp=$(mktemp -d)
+      trap 'rm -rf "$tmp"' EXIT
+      backup=$tmp/flake.lock
       cp "$lock" "$backup"
       profile_before=$(readlink /nix/var/nix/profiles/system || true)
 
+      ${builtins.readFile ../../nixos-central-internal/lib/build-progress.sh}
+
+      # Build first (with live progress on a terminal), then switch to the
+      # finished build: nixos-rebuild only evaluates again.
       if ! { nix flake update "''${update_inputs[@]}" --flake /etc/nixos --refresh &&
+        build_with_progress "$tmp/system" ${lib.escapeShellArg "/etc/nixos#nixosConfigurations.\"${config.nixos-central.hostname}\".config.system.build.toplevel"} &&
         nixos-rebuild switch --flake "/etc/nixos#${config.nixos-central.hostname}"; }; then
         if [ "$(readlink /nix/var/nix/profiles/system || true)" = "$profile_before" ]; then
           cp "$backup" "$lock"

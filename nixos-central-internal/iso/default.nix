@@ -35,10 +35,12 @@ in
   # default zstd compression.
   image.baseName = lib.mkForce "nixos-central-${config.system.nixos.release}-${pkgs.stdenv.hostPlatform.uname.processor}";
 
-  # gum: the installer's menus, without fetching it first.
+  # gum: the installer's menus, and nom: its build progress display, without
+  # fetching them first.
   environment.systemPackages = [
     start
     pkgs.gum
+    pkgs.nix-output-monitor
   ];
 
   # Offer the installer on the first console only. Serial consoles, SSH and

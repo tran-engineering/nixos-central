@@ -132,11 +132,16 @@ is erased and the passwords are always typed.
 6. Erases the disk: 1 GiB EFI partition, the rest LUKS-encrypted ext4.
 7. Writes the machine's configuration to `/etc/nixos` (with the overlay and
    profile, exactly as `nixos-central private setup` would) and installs NixOS.
-   The key goes to `~/.ssh/id_ed25519` of your user.
+   On the console, the installation shows live build progress (what is
+   downloaded and built, and how much is done). On a serial console, with
+   `TERM=dumb`, or with `NIXOS_CENTRAL_PLAIN=1`, it prints Nix's plain log lines
+   instead. The key goes to `~/.ssh/id_ed25519` of your user.
 8. Shows a summary and asks to reboot.
 
 On failure it names the failed step and the log file
 (`/tmp/nixos-central-install.log` on the live system) and does not reboot.
+When the live progress was shown, the log holds the build as Nix's JSON log
+lines (`@nix {...}`); the messages, including errors, are in their `msg` fields.
 
 ## Install on another Linux distribution
 
@@ -186,6 +191,12 @@ nixos-central diff                # packages the last update changed
 nixos-central status              # when the last update succeeded, how old things are
 home-manager generations          # then run <generation path>/activate to roll back
 ```
+
+In a terminal, `nixos-central upgrade` shows live build progress (what is
+downloaded and built, and how much is done). Set `NIXOS_CENTRAL_PLAIN=1` for
+Nix's plain log lines instead. It builds and activates the
+`homeConfigurations."<login name>"` entry of `~/.config/home-manager/flake.nix`,
+the one the home installer writes.
 
 Old generations are cleaned up weekly, as on NixOS ([Updates](#updates)):
 `home-manager generations` lists those of the last 30 days and the one in use 30

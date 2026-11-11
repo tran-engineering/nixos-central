@@ -34,6 +34,7 @@ init_globals() {
   HOST_FLAG=0 USER_FLAG=0 DESKTOP_FLAG=0 DISK_FLAG=0 KEYBOARD_LAYOUT_FLAG=0 TIME_ZONE_FLAG=0 PRIVATE_FLAG=0 PROFILE_FLAG=0
   DESKTOPS="" RELEASE="" DISK_ID="" PASSWORD_HASH="" KEYBOARD_LAYOUTS="" TIME_ZONES=""
   MENUS=0 GUM="" # gum menus for choices, or plain prompts (setup_menus)
+  NOM="" # nix-output-monitor for build progress, or plain build output (setup_build_progress)
   DEFAULT_PRIVATE="" PROFILES="" KEY_GENERATED=0 INSTALLED=0
   STEP="starting"
 }
@@ -69,8 +70,9 @@ Options:
   --no-nvidia       don't install the NVIDIA driver, and don't ask
   -h, --help        show this help
 
-Choices are menus on the console. On a serial console, with TERM=dumb or with
-NIXOS_CENTRAL_PLAIN=1 every question is a plain prompt instead.
+Choices are menus on the console, and the installation shows live build
+progress. On a serial console, with TERM=dumb or with NIXOS_CENTRAL_PLAIN=1
+every question is a plain prompt instead, and the build prints Nix's plain log.
 EOF
 }
 
@@ -213,6 +215,59 @@ setup_menus() {
 menu() { "$GUM" "$@" </dev/tty 2>/dev/tty; }
 
 menu_cancelled() { die "Aborted. Nothing was changed."; }
+
+# ── build progress ────────────────────────────────────────────────────────────
+# The installation's build is shown with nix-output-monitor's live display on
+# the terminal, else with Nix's plain log lines. Independent of the menus: a
+# failed gum fetch keeps the progress display, and the other way round.
+
+# Decides NOM once, after ensure_root (globals don't survive the sudo re-exec).
+setup_build_progress() {
+  NOM=""
+  [ -z "${NIXOS_CENTRAL_PLAIN:-}" ] || return 0
+  case "${TERM:-dumb}" in dumb | unknown) return 0 ;; esac
+  # Opening it, not only its permissions: without a controlling terminal it fails.
+  { : </dev/tty >/dev/tty; } 2>/dev/null || return 0
+  if command -v nom >/dev/null; then
+    NOM=$(command -v nom)
+  else
+    local out
+    out=$(nixx build --no-link --print-out-paths --inputs-from "$CENTRAL" nixpkgs#nix-output-monitor 2>/dev/null | head -n1) || out=""
+    if [ -z "$out" ] || [ ! -x "$out/bin/nom" ]; then
+      info "Build progress is shown as plain output (could not fetch nix-output-monitor)."
+      return 0
+    fi
+    NOM=$out/bin/nom
+  fi
+}
+
+# build_with_progress <out-link> <nix build arguments...>
+# Copy of nixos-central-internal/lib/build-progress.sh (also copied into
+# home-only.sh), adapted to the install log: nom draws on /dev/tty like gum,
+# and the log gets Nix's JSON log lines without the screen redraws. Keep in step.
+build_with_progress() {
+  local link=$1
+  shift
+  if [ -n "$NOM" ]; then
+    nixx build "$@" --out-link "$link" --log-format internal-json -v 2>&1 |
+      tee -a "$LOG" | "$NOM" --json >/dev/tty 2>&1
+  else
+    # TERM=dumb: Nix's line logger, without progress bar redraws.
+    TERM=dumb nixx build "$@" --out-link "$link"
+  fi
+}
+
+# Builds the system into /mnt's store like nixos-install --flake does (store,
+# substituters, temporary files on the target disk), then installs that build.
+install_nixos() {
+  local tmp TMPDIR
+  tmp=$(mktemp -d -p /mnt)
+  export TMPDIR=$tmp
+  build_with_progress "$tmp/system" --store /mnt --extra-substituters 'auto?trusted=1' \
+    "/mnt/etc/nixos#nixosConfigurations.\"$HOST\".config.system.build.toplevel"
+  nixos-install --root /mnt --system "$(readlink -f "$tmp/system")" --no-root-passwd --no-channel-copy
+  rm -rf "$tmp"
+}
 
 # ask_until_valid VAR "question" default hint option...: plain prompt, repeated
 # with the hint until the answer is one of the options.
@@ -439,6 +494,7 @@ preflight() {
 
   load_time_zones
   setup_menus
+  setup_build_progress
 }
 
 # Valid time zones: the live system's database, which the installed release's
@@ -762,7 +818,7 @@ install_system() {
 
   STEP="installing NixOS (this takes a while)"
   info "==> $STEP"
-  nixos-install --root /mnt --flake "/mnt/etc/nixos#$HOST" --no-root-passwd --no-channel-copy
+  install_nixos
 
   if [ "$KEY_GENERATED" = 1 ]; then
     STEP="installing the SSH key for $USERNAME"

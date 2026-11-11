@@ -7,6 +7,7 @@
   coreutils,
   nix,
   home-manager,
+  nix-output-monitor,
   flakeDir,
   # Inputs the daily upgrade updates: central, plus private if declared.
   updateInputs,
@@ -23,6 +24,7 @@ writeShellApplication {
     coreutils
     nix
     home-manager
+    nix-output-monitor # build progress (build_with_progress)
   ];
   text = ''
     usage() {
@@ -58,6 +60,9 @@ writeShellApplication {
     esac
 
     flake=${lib.escapeShellArg flakeDir}
+    # The configuration home-only.sh writes. Named explicitly so the build and
+    # the switch below use the same one.
+    user=''${USER:-$(id -un)}
     profile() {
       readlink "''${XDG_STATE_HOME:-$HOME/.local/state}/nix/profiles/home-manager" ||
         readlink "/nix/var/nix/profiles/per-user/$USER/home-manager" || true
@@ -66,13 +71,19 @@ writeShellApplication {
     # nix writes the updated lock file before building; put it back if the
     # upgrade fails before a new generation was installed.
     lock=$flake/flake.lock
-    backup=$(mktemp)
-    trap 'rm -f "$backup"' EXIT
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' EXIT
+    backup=$tmp/flake.lock
     cp "$lock" "$backup"
     profile_before=$(profile)
 
+    ${builtins.readFile ../lib/build-progress.sh}
+
+    # Build first (with live progress on a terminal), then switch to the
+    # finished build: home-manager only evaluates again.
     if ! { nix flake update "''${inputs[@]}" --flake "$flake" --refresh &&
-      home-manager switch --flake "$flake" ${lib.escapeShellArgs switchFlags}; }; then
+      build_with_progress "$tmp/home" "$flake#homeConfigurations.\"$user\".activationPackage" &&
+      home-manager switch --flake "$flake#$user" ${lib.escapeShellArgs switchFlags}; }; then
       if [ "$(profile)" = "$profile_before" ]; then
         cp "$backup" "$lock"
         echo "Upgrade failed; nothing was changed." >&2
