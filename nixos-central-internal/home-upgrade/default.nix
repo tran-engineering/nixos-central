@@ -5,9 +5,12 @@
   lib,
   writeShellApplication,
   coreutils,
+  diffutils,
   nix,
   home-manager,
   nix-output-monitor,
+  # Keeps the recorded NVIDIA driver in step with the host (nvidia-pin.nix).
+  nvidia-pin,
   flakeDir,
   # Inputs the daily upgrade updates: central, plus private if declared.
   updateInputs,
@@ -22,9 +25,11 @@ writeShellApplication {
   # No systemd: systemctl comes from the host, matching its user manager.
   runtimeInputs = [
     coreutils
+    diffutils # cmp
     nix
     home-manager
     nix-output-monitor # build progress (build_with_progress)
+    nvidia-pin
   ];
   text = ''
     usage() {
@@ -68,14 +73,19 @@ writeShellApplication {
         readlink "/nix/var/nix/profiles/per-user/$USER/home-manager" || true
     }
 
-    # nix writes the updated lock file before building; put it back if the
-    # upgrade fails before a new generation was installed.
+    # nix writes the updated lock file before building, and the NVIDIA pin may
+    # be rewritten; put both back if the upgrade fails before a new generation
+    # was installed.
     lock=$flake/flake.lock
     tmp=$(mktemp -d)
     trap 'rm -rf "$tmp"' EXIT
     backup=$tmp/flake.lock
     cp "$lock" "$backup"
+    cp "$flake/flake.nix" "$tmp/flake.nix"
     profile_before=$(profile)
+
+    # Never fails; on problems it warns and keeps the recorded driver.
+    nixos-central-nvidia-pin "$flake"
 
     ${builtins.readFile ../lib/build-progress.sh}
 
@@ -86,6 +96,7 @@ writeShellApplication {
       home-manager switch --flake "$flake#$user" ${lib.escapeShellArgs switchFlags}; }; then
       if [ "$(profile)" = "$profile_before" ]; then
         cp "$backup" "$lock"
+        cmp -s "$tmp/flake.nix" "$flake/flake.nix" || cp "$tmp/flake.nix" "$flake/flake.nix"
         echo "Upgrade failed; nothing was changed." >&2
       else
         echo "Upgrade installed, but activating it failed (go back with: home-manager generations)." >&2
@@ -95,5 +106,28 @@ writeShellApplication {
 
     echo
     echo "The latest update is active."
+
+    # The system-wide GPU setup (/run/opengl-driver) must point to this home's
+    # drivers, e.g. after the NVIDIA pin moved. It needs root: run it with sudo
+    # on a terminal (the password prompt is the consent), else say how.
+    # Prints "<drivers> <setup>", or nothing without GPU integration.
+    # shellcheck disable=SC2016 # a Nix expression, not shell
+    gpu=$(nix eval --raw "$flake#homeConfigurations.\"$user\".config.targets.genericLinux.gpu" \
+      --apply 'g: if g.enable then "''${g.drivers} ''${g.setupPackage}/bin/non-nixos-gpu-setup" else ""' 2>/dev/null) || gpu=""
+    if [ -n "$gpu" ]; then
+      drivers=''${gpu%% *}
+      setup=''${gpu#* }
+      if [ "$(readlink /run/opengl-driver || true)" != "$drivers" ]; then
+        echo
+        if [ -t 0 ] && [ -t 1 ]; then
+          echo "The GPU drivers changed; setting them up for the whole machine (needs sudo) ..."
+          if ! sudo "$setup"; then
+            echo "GPU setup did not run. Programs from Nix may not find the GPU until you run:  sudo $setup" >&2
+          fi
+        else
+          echo "The GPU drivers changed. To set them up for the whole machine, run:  sudo $setup"
+        fi
+      fi
+    fi
   '';
 }

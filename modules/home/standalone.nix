@@ -4,6 +4,8 @@
 let
   # Inputs the daily upgrade and nixos-central upgrade update (and nothing else).
   updateInputs = [ "central" ] ++ lib.optional config.nixos-central.private.enable "private";
+  # Rewrites the recorded NVIDIA driver when the host's loaded driver changed.
+  nvidia-pin = pkgs.callPackage ../../nixos-central-internal/home-upgrade/nvidia-pin.nix { };
 in
 {
   # Integrates with the host: XDG paths, and GPU drivers for Nix programs after
@@ -29,7 +31,7 @@ in
     # The daily upgrade below, right now.
     upgrade = (import ../../nixos-central-internal/command/subcommands.nix).upgrade // {
       package = pkgs.callPackage ../../nixos-central-internal/home-upgrade {
-        inherit updateInputs;
+        inherit updateInputs nvidia-pin;
         inherit (config.services.home-manager.autoUpgrade) flakeDir;
         switchFlags = config.services.home-manager.autoUpgrade.flags;
         nix = config.nix.package;
@@ -54,7 +56,11 @@ in
     enable = true;
     frequency = "daily";
     useFlake = true;
-    preSwitchCommands = [ "nix flake update ${lib.concatStringsSep " " updateInputs}" ];
+    # Runs in the flake directory. The NVIDIA pin is synced first; it never fails.
+    preSwitchCommands = [
+      "${nvidia-pin}/bin/nixos-central-nvidia-pin ."
+      "nix flake update ${lib.concatStringsSep " " updateInputs}"
+    ];
     flags = [
       "-b"
       "backup"

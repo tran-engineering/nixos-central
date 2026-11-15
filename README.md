@@ -205,9 +205,17 @@ days ago.
 **GPU drivers.** Graphical programs from Nix need the drivers set up once per
 machine: `sudo <path>/bin/non-nixos-gpu-setup` (the installer runs it or prints
 the exact command; home-manager reminds you when it is needed). With the
-proprietary NVIDIA driver, the installer records its version; after the
-distribution updates the driver, run the installer again with
-`--replace-existing` so the recorded version matches.
+proprietary NVIDIA driver, the installer records its version and hash in
+`~/.config/home-manager/flake.nix`, and the Nix copy must match the loaded
+driver exactly. Upgrades keep it in step: when the distribution has updated the
+driver, `nixos-central upgrade` and the daily update download the new version
+(about 400 MB) and record it before building. If that download fails, they warn
+and keep the old version. A line edited into another shape is left alone with a
+warning, and `nvidia = null` stays as it is. After the drivers changed,
+`nixos-central upgrade` runs the GPU setup with `sudo` (it asks for your
+password; without a terminal it only prints the command). The daily update never
+uses sudo, so after a driver update run `nixos-central upgrade` yourself, which
+is also the fastest fix when programs from Nix stop finding the GPU.
 
 ## How a machine is configured
 

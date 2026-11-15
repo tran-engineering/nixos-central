@@ -1134,6 +1134,26 @@ in
               assert "stub central two" in out and "nothing was changed" in out, out
               assert state("home") == before, f"{before} != {state('home')}"
 
+          with subtest("a rewritten NVIDIA pin is put back when the build fails"):
+              # Loaded driver 100.20.20, served from a local tree instead of download.nvidia.com.
+              # As root: alice() quotes its command in single quotes.
+              machine.succeed(" && ".join([
+                  "mkdir -p ~alice/nv/Linux-x86_64/100.20.20",
+                  "echo driver > ~alice/nv/Linux-x86_64/100.20.20/NVIDIA-Linux-x86_64-100.20.20.run",
+                  "echo 'NVRM version: NVIDIA UNIX Open Kernel Module for x86_64  100.20.20  Release Build' > ~alice/nvversion",
+                  "sed -i 's|mkHome { }|mkHome {\\n        nvidia = { version = \"100.10.10\"; sha256 = \"sha256-OLD=\"; }; # host driver\\n      }|' ~alice/home/flake.nix",
+                  "grep -q 'nvidia = { version = \"100.10.10\"' ~alice/home/flake.nix",
+                  "chown -R alice: ~alice/nv ~alice/nvversion ~alice/home",
+              ]))
+              commit("central", "two", "two-b")
+              flake_before = machine.succeed("md5sum ~alice/home/flake.nix")
+              before = state("home")
+              out = machine.fail(alice("NIXOS_CENTRAL_NVIDIA_VERSION_FILE=$HOME/nvversion NIXOS_CENTRAL_NVIDIA_BASE_URL=file://$HOME/nv home-upgrade"))
+              assert "NVIDIA driver 100.10.10 -> 100.20.20" in out, out
+              assert "stub central two-b" in out and "nothing was changed" in out, out
+              assert machine.succeed("md5sum ~alice/home/flake.nix") == flake_before, machine.succeed("cat ~alice/home/flake.nix")
+              assert state("home") == before, f"{before} != {state('home')}"
+
           with subtest("refuses while the automatic upgrade runs"):
               machine.succeed(alice("systemctl --user start --no-block home-manager-auto-upgrade.service"))
               machine.wait_until_succeeds(alice("systemctl --user show -P ActiveState home-manager-auto-upgrade.service | grep -qx activating"), timeout=30)
@@ -1306,6 +1326,81 @@ in
 
       touch $out
     '';
+
+    # The NVIDIA pin of standalone homes follows the loaded driver
+    # (home-upgrade/nvidia-pin.nix), with a stub nix instead of the download.
+    nvidia-pin =
+      let
+        # Records its arguments; fails when STUB_FAIL is set.
+        stubNix = pkgs.writeShellScriptBin "nix" ''
+          echo "$*" >> "$STUB_LOG"
+          [ -z "''${STUB_FAIL:-}" ] || exit 1
+          echo '{"hash":"sha256-NEW/+hash=","storePath":"/nix/store/x"}'
+        '';
+        pin = pkgs.callPackage ../home-upgrade/nvidia-pin.nix { nix = stubNix; };
+      in
+      pkgs.runCommand "nvidia-pin" { } ''
+        set -euo pipefail
+        export STUB_LOG=$PWD/calls NIXOS_CENTRAL_NVIDIA_VERSION_FILE=$PWD/version
+        fail() { echo "FAIL: $*" >&2; exit 1; }
+        flake() { # flake <dir> <nvidia line>
+          mkdir -p "$1"
+          printf '{\n  outputs = _: {\n%s\n  };\n}\n' "$2" > "$1/flake.nix"
+          cp "$1/flake.nix" "$1/orig"
+        }
+        run() { # run <dir>: the script must succeed; stderr in <dir>/err
+          rm -f "$STUB_LOG"
+          ${pin}/bin/nixos-central-nvidia-pin "$1" 2> "$1/err" || fail "$1: exit status $?"
+        }
+        unchanged() { cmp -s "$1/flake.nix" "$1/orig" || fail "$1: flake.nix changed"; }
+        not_fetched() { [ ! -e "$STUB_LOG" ] || fail "$1: nix was called"; }
+        old='        nvidia = { version = "615.78.08"; sha256 = "sha256-OLD="; }; # host'"'"'s NVIDIA driver'
+
+        # The format of /proc/driver/nvidia/version.
+        echo 'NVRM version: NVIDIA UNIX Open Kernel Module for x86_64  620.70.06  Release Build  (builder@host)  Mon Nov  2 2026' > version
+
+        # Driver changed: only the two values change, comment and indentation stay.
+        flake changed "$old"
+        run changed
+        printf '{\n  outputs = _: {\n%s\n  };\n}\n' \
+          '        nvidia = { version = "620.70.06"; sha256 = "sha256-NEW/+hash="; }; # host'"'"'s NVIDIA driver' > expected
+        cmp changed/flake.nix expected || { diff changed/flake.nix expected; fail "changed: wrong rewrite"; }
+        grep -q 'https://download.nvidia.com/XFree86/Linux-x86_64/620.70.06/NVIDIA-Linux-x86_64-620.70.06.run' "$STUB_LOG" || fail "changed: wrong URL"
+        grep -q '615.78.08 -> 620.70.06' changed/err || fail "changed: no message"
+
+        # Driver unchanged: nothing fetched, file untouched.
+        flake same '        nvidia = { version = "620.70.06"; sha256 = "sha256-X="; };'
+        run same; unchanged same; not_fetched same
+        [ ! -s same/err ] || fail "same: unexpected output"
+
+        # No driver recorded, even with one loaded.
+        flake none '        nvidia = null; # comment'
+        run none; unchanged none; not_fetched none
+        [ ! -s none/err ] || fail "none: unexpected output"
+
+        # No driver loaded.
+        flake unloaded "$old"
+        NIXOS_CENTRAL_NVIDIA_VERSION_FILE=$PWD/missing run unloaded
+        unchanged unloaded; not_fetched unloaded
+
+        # Download fails: warning naming the version, old pin kept.
+        flake offline "$old"
+        STUB_FAIL=1 run offline
+        unchanged offline
+        grep -q 'could not download NVIDIA driver 620.70.06' offline/err || fail "offline: no warning"
+
+        # Other shapes: two lines, or a reformatted line.
+        flake twice "$old"$'\n'"$old"
+        run twice; unchanged twice; not_fetched twice
+        grep -q 'expected form' twice/err || fail "twice: no warning"
+        flake reformatted '        nvidia = {
+          version = "615.78.08"; sha256 = "sha256-OLD=";
+        };'
+        run reformatted; unchanged reformatted; not_fetched reformatted
+        grep -q 'expected form' reformatted/err || fail "reformatted: no warning"
+
+        touch $out
+      '';
 
     # nixos-central private setup changes nothing when the overlay can't be read or
     # the configuration with it can't be activated (offline VM: it can't build).
