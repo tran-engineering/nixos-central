@@ -51,7 +51,7 @@ writeShellApplication {
     newest=$(generation "$(readlink "$profile")")
 
     ${lib.optionalString (mode == "system") ''
-      # Staged by the daily upgrade (or a reboot ends a tried branch).
+      # Staged for the next boot, e.g. by nixos-rebuild boot (or a reboot ends a tried branch).
       staged=$(readlink -f "$profile")
       current=$(readlink -f /run/current-system)
       if [ "$staged" != "$current" ]; then

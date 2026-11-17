@@ -2,7 +2,7 @@
 # other than NixOS. Facts (user, home directory, NVIDIA driver) are set by mkHome.
 { config, lib, pkgs, ... }:
 let
-  # Inputs the daily upgrade and nixos-central upgrade update (and nothing else).
+  # Inputs nixos-central upgrade updates (and nothing else).
   updateInputs = [ "central" ] ++ lib.optional config.nixos-central.private.enable "private";
   # Rewrites the recorded NVIDIA driver when the host's loaded driver changed.
   nvidia-pin = pkgs.callPackage ../../nixos-central-internal/home-upgrade/nvidia-pin.nix { };
@@ -28,12 +28,19 @@ in
 
   # Subcommands of the home's nixos-central command (modules/home/command.nix).
   nixos-central.commands = {
-    # The daily upgrade below, right now.
+    # The only way the home is updated; nothing upgrades it automatically.
     upgrade = (import ../../nixos-central-internal/command/subcommands.nix).upgrade // {
       package = pkgs.callPackage ../../nixos-central-internal/home-upgrade {
         inherit updateInputs nvidia-pin;
-        inherit (config.services.home-manager.autoUpgrade) flakeDir;
-        switchFlags = config.services.home-manager.autoUpgrade.flags;
+        # Where home-only.sh writes the home's flake.
+        flakeDir = "${config.xdg.configHome}/home-manager";
+        # Keep files home-manager would replace as <name>.backup.
+        switchFlags = [
+          "-b"
+          "backup"
+        ];
+        # Seen by the update notice (update-notice.nix).
+        inherit (config.nixos-central.updateNotice) stamp;
         nix = config.nix.package;
         home-manager = config.programs.home-manager.package;
       };
@@ -48,33 +55,5 @@ in
     };
   };
 
-  # Daily: bump the `central` input (and the private overlay, if any) in
-  # ~/.config/home-manager and switch to it.
-  # Without preSwitchCommands the timer would rebuild the same locked revision
-  # forever (the default is empty since home-manager 26.05).
-  services.home-manager.autoUpgrade = {
-    enable = true;
-    frequency = "daily";
-    useFlake = true;
-    # Runs in the flake directory. The NVIDIA pin is synced first; it never fails.
-    preSwitchCommands = [
-      "${nvidia-pin}/bin/nixos-central-nvidia-pin ."
-      "nix flake update ${lib.concatStringsSep " " updateInputs}"
-    ];
-    flags = [
-      "-b"
-      "backup"
-    ];
-  };
-
-  # Record every successful run, also when nothing changed, for the update
-  # notice (update-notice.nix). ExecStartPost only runs if the upgrade succeeded.
-  systemd.user.services.home-manager-auto-upgrade.Service.ExecStartPost = toString (
-    pkgs.writeShellScript "home-manager-auto-upgrade-record" ''
-      stamp=${lib.escapeShellArg config.nixos-central.updateNotice.stamp}
-      ${pkgs.coreutils}/bin/mkdir -p "$(${pkgs.coreutils}/bin/dirname "$stamp")"
-      ${pkgs.coreutils}/bin/touch "$stamp"
-    ''
-  );
   nixos-central.updateNotice.standalone = true;
 }

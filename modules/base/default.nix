@@ -3,7 +3,6 @@
 {
   imports = [
     ./appimage.nix
-    ./auto-upgrade.nix
     ./command.nix
     ./docker.nix
     ./envfs.nix

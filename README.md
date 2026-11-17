@@ -2,7 +2,7 @@
 
 One central NixOS configuration for many machines. Anyone can install it from
 its USB image by answering a few questions; afterwards every machine follows
-this repository automatically.
+this repository whenever its user runs `nixos-central upgrade`.
 
 ## Install
 
@@ -120,8 +120,8 @@ is erased and the passwords are always typed.
    (`/etc/secrets/<user>.hash`), never in the Nix store.
 5. Offers to set up a [private overlay](#private-overlay) (default: no). If you
    accept (or pass `--private`), it
-   - generates an SSH key for you, **without passphrase**, because daily updates
-     fetch the overlay with it unattended,
+   - generates an SSH key for you, **without passphrase**, because
+     `nixos-central upgrade` fetches the overlay with it as root,
    - shows the public key as text and as a QR code: scan it with your phone and
      paste it on GitHub (Settings → SSH and GPG keys → New SSH key), then press Enter,
    - checks that the key can read the overlay; if not, you can retry or continue
@@ -179,8 +179,8 @@ directory, NVIDIA driver, and the private overlay and its profile once added);
 everything else comes from this repository. Homes installed earlier record
 `profile = "_default";` there; that line is harmless and is replaced when you
 add an overlay with `--profile`.
-It updates itself daily (`systemctl --user list-timers home-manager-auto-upgrade.timer`).
-New terminals tell you when it has not managed to update for a while
+It never updates itself: update it with `nixos-central upgrade`. New terminals
+remind you once the last update is more than a day old
 ([update notice](#updates)).
 Run by hand:
 
@@ -207,15 +207,13 @@ machine: `sudo <path>/bin/non-nixos-gpu-setup` (the installer runs it or prints
 the exact command; home-manager reminds you when it is needed). With the
 proprietary NVIDIA driver, the installer records its version and hash in
 `~/.config/home-manager/flake.nix`, and the Nix copy must match the loaded
-driver exactly. Upgrades keep it in step: when the distribution has updated the
-driver, `nixos-central upgrade` and the daily update download the new version
-(about 400 MB) and record it before building. If that download fails, they warn
-and keep the old version. A line edited into another shape is left alone with a
+driver exactly. `nixos-central upgrade` keeps it in step: when the distribution
+has updated the driver, it downloads the new version (about 400 MB) and records
+it before building. If that download fails, it warns and keeps the old version. A line edited into another shape is left alone with a
 warning, and `nvidia = null` stays as it is. After the drivers changed,
 `nixos-central upgrade` runs the GPU setup with `sudo` (it asks for your
-password; without a terminal it only prints the command). The daily update never
-uses sudo, so after a driver update run `nixos-central upgrade` yourself, which
-is also the fastest fix when programs from Nix stop finding the GPU.
+password; without a terminal it only prints the command). It is also the
+fastest fix when programs from Nix stop finding the GPU after a driver update.
 
 ## How a machine is configured
 
@@ -361,8 +359,7 @@ the machine keeps running but gets no updates until that's fixed.
 either one stays out of `main` until someone resolves it.
 
 `nixos-central upgrade` activates a new driver while the old kernel modules are
-still loaded, and says so: programs using the GPU may fail until you reboot. The
-daily update only takes effect after a reboot, so it doesn't have this problem.
+still loaded, and says so: programs using the GPU may fail until you reboot.
 
 ## Signing in with a security key (YubiKey)
 
@@ -587,8 +584,8 @@ To set it up later, after the first boot (NixOS) or after `home-only.sh` (other
 distributions):
 
 1. Copy your SSH key to `~/.ssh/id_ed25519`. It must have no passphrase,
-   because daily updates fetch the overlay without you. Its public key must be
-   added to your GitHub account.
+   because `nixos-central upgrade` fetches the overlay with it as root. Its
+   public key must be added to your GitHub account.
 2. Run:
 
    ```sh
@@ -617,16 +614,15 @@ distributions):
 
 `nixos-central private` shows which overlay a machine or home uses, if any.
 
-From then on, daily updates and `nixos-central upgrade` update the overlay
-together with this repository. On NixOS they run as root, which uses your
+From then on, `nixos-central upgrade` updates the overlay together with this
+repository. On NixOS it runs as root, which uses your
 `~/.ssh/id_ed25519` for GitHub only. After pushing a change to the overlay,
 `nixos-central upgrade --private` uses it right away without updating this
 repository.
 
 If the overlay can't be fetched (key removed from GitHub, repository renamed),
-updates **stop** instead of continuing without it: the machine keeps running
-its current configuration, and `systemctl status nixos-upgrade` shows the
-error. Fix access, or take the overlay out with `nixos-central private remove`.
+`nixos-central upgrade` **fails** instead of continuing without it: the machine
+keeps running its current configuration, and the command shows the error. Fix access, or take the overlay out with `nixos-central private remove`.
 
 Losing a machine means its key can read the repository: remove that key from
 your GitHub account.
@@ -708,11 +704,30 @@ it needs a branch.
 
 ## Updates
 
-- Every day (or soon after boot, if the computer was off) each machine fetches
-  the latest `main` of this repository, builds it and makes it the **default for
-  the next boot**. The running system is not changed and the computer is never
-  rebooted automatically.
-- Desktop users get a notification *"Update ready – reboot when convenient"*.
+- Machines and homes **never update on their own**. You decide when:
+  `nixos-central upgrade` installs the latest `main` of this repository **and
+  uses it now**. It also becomes the default for the next boot. Switching may
+  restart services (and the desktop), so save your work first. The computer is
+  never rebooted; a new kernel is used only after the next reboot, and the
+  command says so when that applies. `nixos-central upgrade --private` updates
+  only your [private overlay](#private-overlay) and leaves this repository at
+  the installed revision. Standalone homes have the same command (no `sudo`).
+- Once the last update is more than a day old, every new terminal says how long
+  ago it was and shows the command to update (and, if a newer generation is
+  already waiting, that a reboot uses it). It also shows how old the running
+  system and the pinned revision of this repository are. A successful
+  `nixos-central upgrade` counts even if nothing changed, so a quiet repository
+  causes no notice. Homes on
+  [other distributions](#install-on-another-linux-distribution) get the same
+  notice. `nixos-central status` shows the same at any time. Change the
+  number of days in your profile, `0` turns the terminal notice off:
+
+  ```nix
+  nixos-central.updateNotice.days = 7;
+  ```
+- If a newer generation is made the default for the next boot without using it
+  (e.g. `sudo nixos-rebuild boot`), desktop users get a notification
+  *"Update ready – reboot when convenient"*.
 - See which packages an update changes (as `nh` shows them): `nixos-central diff`.
   While an update waits for a reboot, it compares the running system with it
   (*"Pending on next reboot"*); otherwise it shows what the last update changed
@@ -732,27 +747,6 @@ it needs a branch.
   ```nix
   nixos-central.gc.keepDays = 90;           # machine; nixos-central.gc.enable = false; turns it off
   nix.gc.options = "--delete-older-than 90d"; # profile; nix.gc.automatic = false; turns it off
-  ```
-- Stage the latest update for the next boot right away (like the daily run):
-  `sudo systemctl start nixos-upgrade`.
-- Install the latest update **and use it now**: `nixos-central upgrade`. It
-  also becomes the default for the next boot. Switching may restart services
-  (and the desktop), so save your work first. A new kernel is used only after
-  the next reboot; the command says so when that applies.
-  `nixos-central upgrade --private` updates only your
-  [private overlay](#private-overlay) and leaves this repository at the
-  installed revision. Standalone homes have the same command (no `sudo`).
-- When no update has succeeded for more than 7 days, every new terminal says so,
-  with what to do (reboot into a staged update, run `nixos-central upgrade`, or
-  check the daily update). It also shows how old the running system and the
-  pinned revision of this repository are. A successful daily update counts even
-  if nothing changed, so a quiet repository causes no notice. Homes on
-  [other distributions](#install-on-another-linux-distribution) get the same
-  notice. `nixos-central status` shows the same at any time. Change the
-  number of days in your profile, `0` turns the terminal notice off:
-
-  ```nix
-  nixos-central.updateNotice.days = 14;
   ```
 
 ### Firmware updates

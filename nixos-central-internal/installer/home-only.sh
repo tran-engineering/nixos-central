@@ -23,7 +23,7 @@ init_globals() {
   # Override for testing, e.g. NIXOS_CENTRAL_FLAKE=git+https://github.com/tran-engineering/nixos-central?ref=my-branch
   CENTRAL="${NIXOS_CENTRAL_FLAKE:-git+https://github.com/tran-engineering/nixos-central}"
   PAGES=https://tran-engineering.github.io/nixos-central
-  HM_DIR="$HOME/.config/home-manager" # must match services.home-manager.autoUpgrade.flakeDir
+  HM_DIR="$HOME/.config/home-manager" # must match flakeDir in modules/home/standalone.nix
   NIX_DAEMON_PROFILE=/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
   NVIDIA_VERSION_FILE=/proc/driver/nvidia/version
 
@@ -348,9 +348,9 @@ finish() {
   heading "Done"
   info "    user      $USERNAME ($HOME)"
   info "    config    $HM_DIR (base configuration from nixos-central)"
-  info "    updates   daily, automatically (systemctl --user list-timers home-manager-auto-upgrade.timer)"
+  info "    updates   only when you run nixos-central upgrade (new terminals remind you)"
   info ""
-  info "Update now:   nix flake update central --flake $HM_DIR && home-manager switch --flake $HM_DIR"
+  info "Update:       nixos-central upgrade"
   info "Roll back:    home-manager generations, then run <generation>/activate"
   info "Your own profile: add your private overlay with"
   info "    nixos-central private setup [<flake-url>] [--profile NAME]"

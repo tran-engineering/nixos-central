@@ -640,8 +640,8 @@ run_tool() {
   fi
 }
 
-# The primary user's key: without passphrase, because the daily upgrade fetches
-# the overlay with it unattended. A key from an earlier, failed attempt is
+# The primary user's key: without passphrase, because nixos-central upgrade
+# fetches the overlay with it as root. A key from an earlier, failed attempt is
 # reused, as it may already be on GitHub.
 generate_ssh_key() {
   KEY_GENERATED=1

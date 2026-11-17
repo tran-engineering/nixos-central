@@ -1,6 +1,6 @@
 # nixos-central upgrade for standalone homes (standalone.nix): install the
-# latest central configuration (and private overlay) right away, as the daily
-# home-manager-auto-upgrade does. Counterpart of modules/base/upgrade.nix.
+# latest central configuration (and private overlay) right away. The only way
+# a home is updated. Counterpart of modules/base/upgrade.nix.
 {
   lib,
   writeShellApplication,
@@ -12,17 +12,18 @@
   # Keeps the recorded NVIDIA driver in step with the host (nvidia-pin.nix).
   nvidia-pin,
   flakeDir,
-  # Inputs the daily upgrade updates: central, plus private if declared.
+  # Inputs to update: central, plus private if declared.
   updateInputs,
-  # home-manager switch flags of the daily upgrade.
+  # home-manager switch flags.
   switchFlags,
+  # Touched after every successful upgrade, for the update notice.
+  stamp,
 }:
 let
   hasPrivate = builtins.elem "private" updateInputs;
 in
 writeShellApplication {
   name = "nixos-central-upgrade";
-  # No systemd: systemctl comes from the host, matching its user manager.
   runtimeInputs = [
     coreutils
     diffutils # cmp
@@ -54,14 +55,6 @@ writeShellApplication {
         }
         ;;
       *) usage ;;
-    esac
-
-    # A running oneshot is "activating", which `systemctl is-active` reports as inactive.
-    case "$(systemctl --user show --property=ActiveState --value home-manager-auto-upgrade.service 2>/dev/null || true)" in
-      active | activating | reloading)
-        echo "An automatic upgrade is running right now; try again when it has finished (journalctl --user -fu home-manager-auto-upgrade)." >&2
-        exit 1
-        ;;
     esac
 
     flake=${lib.escapeShellArg flakeDir}
@@ -103,6 +96,11 @@ writeShellApplication {
       fi
       exit 1
     fi
+
+    # Seen by the update notice, also when nothing changed.
+    stamp=${lib.escapeShellArg stamp}
+    mkdir -p "$(dirname "$stamp")"
+    touch "$stamp"
 
     echo
     echo "The latest update is active."

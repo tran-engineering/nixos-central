@@ -1,6 +1,6 @@
 # Fetching the private overlay (README, "Private overlay") over SSH without
-# interaction: the daily upgrade runs as root, which uses the primary user's
-# key for GitHub only. Unconditional, so the first rebuild of
+# interaction: nixos-central upgrade runs as root, which uses the primary
+# user's key for GitHub only. Unconditional, so the first rebuild of
 # `nixos-central private setup` can already fetch the overlay.
 { config, pkgs, ... }:
 {

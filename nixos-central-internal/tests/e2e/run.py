@@ -510,18 +510,14 @@ def phase_installed(args, repo):
     rc, _ = vm.run("test -e ~/overlay-profile || test -e ~/overlay-marker")
     check(rc != 0, "overlay's files removed")
 
-    log("auto-upgrade: central change merged later is staged for next boot")
+    log("no automatic upgrade: a central change merged later waits for nixos-central upgrade")
     repo.edit_base('home.sessionVariables.EDITOR = "nano";')
     repo.commit("base: EDITOR=nano")
     repo.git("push", "-q", "origin", "main")
-    before = vm.succeed("readlink /run/current-system; md5sum /etc/nixos/flake.lock").split() + [boot_entries(vm)]
-    rc, out = sudo(vm, "systemctl start nixos-upgrade.service", 3600)
-    check(rc == 0, "nixos-upgrade.service succeeded")
-    after = vm.succeed("readlink /run/current-system; md5sum /etc/nixos/flake.lock").split() + [boot_entries(vm)]
-    check(before[0] == after[0], "running system unchanged by the upgrade")
-    check(before[1] != after[1], "flake.lock updated (central bumped)")
-    check(after[-1] == before[-1] + 1, f"new boot entry added ({before[-1]} -> {after[-1]})")
-    staged = vm.succeed("readlink -f /nix/var/nix/profiles/system").split()[-1]
+    rc, out = vm.run("systemctl list-timers --all --no-legend")
+    check(rc == 0 and "nixos-upgrade" not in out, "no nixos-upgrade timer")
+    unchanged = vm.succeed("md5sum /etc/nixos/flake.lock").split() + [boot_entries(vm)]
+    installed = vm.succeed("readlink -f /nix/var/nix/profiles/system").split()[-1]
 
     log("nixos-central try: branch active now, lock untouched, no boot entry")
     repo.git("checkout", "-q", "-b", "alice-wip")
@@ -543,12 +539,13 @@ def phase_installed(args, repo):
     check(rc != 0, "nixos-central try with a missing branch fails")
     vm.poweroff()
 
-    log("reboot: try reverted, staged update active")
+    log("reboot: try reverted, installed system unchanged")
     vm = boot_installed(args)
     rc, _ = vm.run("test -e ~/try-marker")
     check(rc != 0, "try change gone after reboot")
-    check(vm.succeed("readlink -f /run/booted-system").split()[-1] == staged, "booted the staged generation")
-    check("nano" in vm.succeed("bash -lc 'echo $EDITOR'"), "central base change active (EDITOR=nano)")
+    check(vm.succeed("readlink -f /run/booted-system").split()[-1] == installed, "booted the installed generation")
+    check(vm.succeed("md5sum /etc/nixos/flake.lock").split() + [boot_entries(vm)] == unchanged, "flake.lock and boot entries unchanged")
+    check("vim" in vm.succeed("bash -lc 'echo $EDITOR'"), "merged central change not applied without nixos-central upgrade (EDITOR=vim)")
 
     log("nixos-central upgrade: latest main active right away and after reboot, ends a tried branch")
     vm.send("sudo -k")

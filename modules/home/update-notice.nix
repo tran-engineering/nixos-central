@@ -1,9 +1,12 @@
 # Part of every profile (NixOS: modules/user.nix, standalone: lib.mkHome).
-# New interactive shells print a short notice when the last successful update is
-# older than nixos-central.updateNotice.days (the notice script with
-# --if-stale); run by hand (`nixos-central status`), it always prints it. Successful updates are recorded by
-# modules/base/auto-upgrade.nix and upgrade.nix (NixOS) and standalone.nix; a
-# newer generation counts too (manual rebuilds, fresh installs).
+# Nothing updates a machine or home automatically, so new interactive shells
+# remind the user: a short notice with how long ago the last successful update
+# was and the command to update, once that is older than
+# nixos-central.updateNotice.days (the notice script with --if-stale). Run by
+# hand (`nixos-central status`), it always prints it. Successful
+# `nixos-central upgrade` runs are recorded by modules/base/upgrade.nix (NixOS)
+# and home-upgrade (standalone); a newer generation counts too (manual
+# rebuilds, fresh installs).
 {
   config,
   lib,
@@ -40,7 +43,7 @@ let
           [ -e "$profile" ] || profile=/nix/var/nix/profiles/per-user/$USER/home-manager
           running=$profile
           what="home configuration"
-          hint="Check the daily update: systemctl --user status home-manager-auto-upgrade"
+          hint="Update with: nixos-central upgrade"
         ''
       else
         ''
@@ -49,12 +52,12 @@ let
           running=''${NIXOS_CENTRAL_NOTICE_RUNNING:-/run/current-system}
           booted=''${NIXOS_CENTRAL_NOTICE_BOOTED:-/run/booted-system}
           what="running system"
-          hint="Run nixos-central upgrade to update now (log of the daily update: journalctl -u nixos-upgrade)."
+          hint="Update with: nixos-central upgrade"
           # Staged for the next boot, as in modules/base/reboot-notify.nix.
           if [ -e "$profile" ]; then
             staged=$(readlink -f "$profile")
             if [ "$staged" != "$(readlink -f "$booted")" ] && [ "$staged" != "$(readlink -f "$running")" ]; then
-              hint="An update is installed; reboot to use it."
+              hint="An update is installed; reboot to use it (or update again with: nixos-central upgrade)."
             fi
           fi
         ''
@@ -117,8 +120,8 @@ in
   options.nixos-central.updateNotice = {
     days = lib.mkOption {
       type = lib.types.ints.unsigned;
-      default = 7;
-      description = "Print a notice in new terminals when the last successful update is older than this many days. 0 turns it off.";
+      default = 1;
+      description = "Print a notice with the update command in new terminals when the last successful update is older than this many days. 0 turns it off.";
     };
 
     standalone = lib.mkOption {

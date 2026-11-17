@@ -638,7 +638,6 @@ in
               machine.succeed(f"nix-env -p {system} --set {path}")
 
           machine.wait_for_unit("multi-user.target")
-          machine.succeed("systemctl stop nixos-upgrade.timer")
 
           with subtest("nothing to compare"):
               # Test VMs boot without a system profile.
@@ -909,24 +908,16 @@ in
         '';
       };
 
-    # nixos-central upgrade changes nothing when it fails or an auto-upgrade runs.
+    # nixos-central upgrade changes nothing when it fails; nothing upgrades the
+    # machine automatically.
     upgrade-failures = runTest {
       name = "nixos-central-upgrade-failures";
       nodes.machine =
-        { lib, pkgs, ... }:
+        { pkgs, ... }:
         {
           imports = [ (testHost { desktop = "none"; }) ];
           virtualisation.memorySize = 2048;
           environment.systemPackages = [ pkgs.git ];
-          # Stands in for a long-running automatic upgrade. Without network-online:
-          # the VM's second interface never comes up, so the start job would wait
-          # for NetworkManager-wait-online longer than the test does.
-          systemd.services.nixos-upgrade = {
-            preStart = lib.mkForce "";
-            script = lib.mkForce "sleep infinity";
-            wants = lib.mkForce [ ];
-            after = lib.mkForce [ ];
-          };
         };
       testScript = ''
         git = "git -c user.name=t -c user.email=t@t -C /tmp/central"
@@ -934,8 +925,6 @@ in
             return machine.succeed("md5sum /etc/nixos/flake.lock; readlink /nix/var/nix/profiles/system")
 
         machine.wait_for_unit("multi-user.target")
-        # The persistent timer may already have started the stand-in at boot.
-        machine.succeed("systemctl stop nixos-upgrade.timer nixos-upgrade.service")
         # Test VMs boot without a system profile; start from a regular installed state.
         machine.succeed("nix-env -p /nix/var/nix/profiles/system --set $(readlink -f /run/booted-system)")
 
@@ -957,14 +946,11 @@ in
             assert "broken central" in out and "nothing was changed" in out, out
             assert state() == before, f"{before} != {state()}"
 
-        with subtest("refuses while the automatic upgrade runs"):
-            machine.succeed("systemctl start --no-block nixos-upgrade.service")
-            machine.wait_until_succeeds("systemctl show -P ActiveState nixos-upgrade.service | grep -qx activating", timeout=30)
-            before = state()
-            out = machine.fail("nixos-central upgrade 2>&1")
-            assert "automatic upgrade is running" in out, out
-            assert state() == before
-            machine.succeed("systemctl stop nixos-upgrade.service")
+        with subtest("no automatic upgrade"):
+            machine.fail("systemctl cat nixos-upgrade.timer")
+            machine.fail("systemctl cat nixos-upgrade.service")
+            assert "upgrade" not in machine.succeed("systemctl list-timers --all --no-legend"), \
+                machine.succeed("systemctl list-timers --all --no-legend")
 
         with subtest("--private without an overlay changes nothing"):
             before = state()
@@ -980,8 +966,8 @@ in
       '';
     };
 
-    # Upgrades of a machine with a private overlay: they update the overlay too,
-    # and an unreachable overlay stops them without changing anything.
+    # nixos-central upgrade of a machine with a private overlay updates the
+    # overlay too, and an unreachable overlay stops it without changing anything.
     overlay-upgrades = runTest {
       name = "nixos-central-overlay-upgrades";
       nodes.machine =
@@ -1004,7 +990,6 @@ in
             return machine.succeed("md5sum /etc/nixos/flake.lock; readlink /nix/var/nix/profiles/system")
 
         machine.wait_for_unit("multi-user.target")
-        machine.succeed("systemctl stop nixos-upgrade.timer nixos-upgrade.service")
         machine.succeed("nix-env -p /nix/var/nix/profiles/system --set $(readlink -f /run/booted-system)")
 
         # Stub central: reads the overlay (forcing its fetch), then fails instead of building.
@@ -1037,15 +1022,13 @@ in
             assert f"stub central one, overlay {new_rev}" in out and "nothing was changed" in out, out
             assert state() == before, f"{before} != {state()}"
 
-        with subtest("an unreachable overlay stops both upgrade paths"):
+        with subtest("an unreachable overlay stops the upgrade"):
             machine.succeed("mv /tmp/private /tmp/private-gone")
-            before = state()
-            out = machine.fail("nixos-central upgrade 2>&1")
-            assert "/tmp/private" in out and "nothing was changed" in out, out
-            assert state() == before, f"{before} != {state()}"
-            machine.fail("systemctl start nixos-upgrade.service")
-            assert "/tmp/private" in machine.succeed("journalctl -u nixos-upgrade.service")
-            assert state() == before, f"{before} != {state()}"
+            for args in ("", " --private"):
+                before = state()
+                out = machine.fail(f"nixos-central upgrade{args} 2>&1")
+                assert "/tmp/private" in out and "nothing was changed" in out, out
+                assert state() == before, f"{before} != {state()}"
 
         with subtest("root uses the primary user's key for GitHub"):
             out = machine.succeed("ssh -G github.com")
@@ -1055,10 +1038,12 @@ in
       '';
     };
 
-    # nixos-central upgrade of standalone homes changes nothing when it fails, an
-    # automatic upgrade runs or its arguments are wrong; --private updates only
-    # the overlay. Runs in a NixOS VM (offline: a stub central can't build a home),
-    # with the home commands under other names so they don't clash with NixOS's.
+    # nixos-central upgrade of standalone homes changes nothing when it fails or
+    # its arguments are wrong; --private updates only the overlay; a successful
+    # run is recorded for the update notice, also when nothing changed. Nothing
+    # upgrades a home automatically. Runs in a NixOS VM (offline: stub centrals
+    # instead of real homes), with the home commands under other names so they
+    # don't clash with NixOS's.
     home-upgrade-failures =
       let
         homeCommand =
@@ -1079,6 +1064,31 @@ in
             }
           }/bin/nixos-central-upgrade $out/bin/home-upgrade-overlay
         '';
+        homeConfig =
+          (central.mkHome {
+            user = "alice";
+            homeDirectory = "/home/alice";
+            stateVersion = central.release;
+            inherit system;
+          }).config;
+        # Stub central whose home builds offline (sandbox off in the VM): what
+        # `home-manager switch` builds, an activate that does nothing and no news.
+        buildableCentral = pkgs.writeText "flake.nix" ''
+          { outputs = _: { lib.mkHome = _: let
+            stub = name: script: derivation {
+              inherit name;
+              system = "${system}";
+              builder = "${pkgs.runtimeShell}";
+              args = [ "-c" script ];
+            };
+          in {
+            activationPackage = stub "stub-home" "${pkgs.coreutils}/bin/mkdir $out && printf '#!${pkgs.runtimeShell}\\ntrue\\n' > $out/activate && ${pkgs.coreutils}/bin/chmod +x $out/activate";
+            config.news.json.output = stub "stub-news" "printf '%s' '{\"display\":\"silent\",\"entries\":[]}' > $out";
+          }; }; }
+        '';
+        buildableHome = pkgs.writeText "flake.nix" ''
+          { inputs.central.url = "git+file:///home/alice/central-ok"; outputs = { central, ... }: { homeConfigurations.alice = central.lib.mkHome { }; }; }
+        '';
       in
       runTest {
         name = "nixos-central-home-upgrade-failures";
@@ -1092,11 +1102,12 @@ in
               commands
             ];
             users.users.alice.linger = true;
-            # Stands in for a long-running automatic home upgrade.
-            systemd.user.services.home-manager-auto-upgrade = {
-              serviceConfig.Type = "oneshot";
-              script = "sleep infinity";
-            };
+            # Lets the buildable stub central use store paths it doesn't declare.
+            nix.settings.sandbox = false;
+            virtualisation.additionalPaths = [
+              pkgs.runtimeShell
+              pkgs.coreutils
+            ];
           };
         testScript = ''
           def alice(cmd):
@@ -1154,14 +1165,13 @@ in
               assert machine.succeed("md5sum ~alice/home/flake.nix") == flake_before, machine.succeed("cat ~alice/home/flake.nix")
               assert state("home") == before, f"{before} != {state('home')}"
 
-          with subtest("refuses while the automatic upgrade runs"):
-              machine.succeed(alice("systemctl --user start --no-block home-manager-auto-upgrade.service"))
-              machine.wait_until_succeeds(alice("systemctl --user show -P ActiveState home-manager-auto-upgrade.service | grep -qx activating"), timeout=30)
-              before = state("home")
-              out = machine.fail(alice("home-upgrade"))
-              assert "automatic upgrade is running" in out, out
-              assert state("home") == before
-              machine.succeed(alice("systemctl --user stop home-manager-auto-upgrade.service"))
+          with subtest("failed upgrades are not recorded"):
+              machine.fail("test -e ${homeConfig.nixos-central.updateNotice.stamp}")
+
+          with subtest("no automatic upgrade"):
+              # The home's own user units, not this NixOS VM's.
+              assert "${toString (builtins.attrNames homeConfig.systemd.user.timers)}" == "nix-gc"
+              assert "${lib.boolToString (homeConfig.systemd.user.services ? home-manager-auto-upgrade)}" == "false"
 
           with subtest("wrong arguments change nothing"):
               before = state("home")
@@ -1182,6 +1192,23 @@ in
               # central stays at the locked revision ("one"), the overlay is the new one.
               assert f"stub central one, overlay {new_rev}" in out and "nothing was changed" in out, out
               assert state("home-overlay") == before, f"{before} != {state('home-overlay')}"
+
+          with subtest("a successful upgrade without changes is recorded"):
+              stamp = "${homeConfig.nixos-central.updateNotice.stamp}"
+              machine.succeed(alice(" && ".join([
+                  "mkdir -p ~/central-ok ~/home-ok",
+                  "cp ${buildableCentral} ~/central-ok/flake.nix",
+                  f"{git} ~/central-ok init -q && {git} ~/central-ok add . && {git} ~/central-ok commit -qm one",
+                  "cp ${buildableHome} ~/home-ok/flake.nix",
+                  "nix flake lock ~/home-ok",
+                  "ln -sfn ~/home-ok ~/.config/home-manager",
+                  f"mkdir -p $(dirname {stamp}) && touch -d @0 {stamp}",
+              ])))
+              lock = machine.succeed("md5sum ~alice/home-ok/flake.lock")
+              out = machine.succeed(alice("home-upgrade"))
+              assert "The latest update is active." in out, out
+              assert machine.succeed("md5sum ~alice/home-ok/flake.lock") == lock, "central unchanged"
+              assert int(machine.succeed(f"stat -c %Y {stamp}")) > 0, "stamp touched"
         '';
       };
 
@@ -1528,29 +1555,35 @@ in
           [ ! -s stderr ] && [ "$(cat status)" = 0 ] || { cat stderr; echo "exit status $(cat status)"; exit 1; }
         }
 
-        # stale: all three ages and the home-manager hint
+        # stale: all three ages and the update command
         touch -h -d @$((now - 15 * day)) p/home-manager-2-link
         touch -d @$((now - 9 * day)) stamp
         expect "nixos-central: last successful update 9 days ago (home configuration installed 15 days ago, central revision committed 16 days ago).
-        Check the daily update: systemctl --user status home-manager-auto-upgrade" "$(notice)"
+        Update with: nixos-central upgrade" "$(notice)"
+        if notice | grep -q 'auto-upgrade\|daily'; then echo "mentions an automatic update"; exit 1; fi
 
         # threshold set by the profile
         expect "" "$(NIXOS_CENTRAL_NOTICE_DAYS=14 notice)"
         expect "" "$(NIXOS_CENTRAL_NOTICE_DAYS=0 notice)"
 
-        # recent successful update, although generation and central revision are old
+        # default threshold of 1 day: 2 days prints, 20 hours and exactly a day don't
+        touch -d @$((now - 2 * day)) stamp
+        expect "nixos-central: last successful update 2 days ago (home configuration installed 15 days ago, central revision committed 16 days ago).
+        Update with: nixos-central upgrade" "$(notice)"
+        touch -d @$((now - 20 * 3600)) stamp
+        expect "" "$(notice)"
         touch -d @$((now - day)) stamp
         expect "" "$(notice)"
 
         # run by hand: printed although recent, and although turned off
         expect "nixos-central: last successful update 1 day ago (home configuration installed 15 days ago, central revision committed 16 days ago).
-        Check the daily update: systemctl --user status home-manager-auto-upgrade" "$(manual)"
+        Update with: nixos-central upgrade" "$(manual)"
         expect "nixos-central: last successful update 1 day ago (home configuration installed 15 days ago, central revision committed 16 days ago)." \
           "$(NIXOS_CENTRAL_NOTICE_DAYS=0 manual | head -1)"
 
         # recent generation (manual switch), although the recorded update is old
         touch -d @$((now - 9 * day)) stamp
-        touch -h -d @$((now - 2 * day)) p/home-manager-2-link
+        touch -h -d @$((now - 3 * 3600)) p/home-manager-2-link
         expect "" "$(notice)"
 
         # unreadable lock file: central age left out
@@ -1569,21 +1602,16 @@ in
         touch $out
       '';
 
-    # New terminals of the primary user tell when updates stopped; successful
-    # automatic upgrades are recorded.
+    # New terminals of the primary user say how long ago the last update was
+    # and how to update, once that is more than a day ago.
     update-notice = runTest {
       name = "nixos-central-update-notice";
       nodes.machine =
-        { lib, pkgs, ... }:
+        { pkgs, ... }:
         {
           imports = [ (testHost { desktop = "none"; }) ];
           virtualisation.memorySize = 2048;
           virtualisation.additionalPaths = [ (pkgs.writeTextDir "fake-system" "staged") ];
-          # Stands in for the upgrade: succeeds once /tmp/upgrade-ok exists.
-          systemd.services.nixos-upgrade = {
-            preStart = lib.mkForce "";
-            script = lib.mkForce "test -e /tmp/upgrade-ok";
-          };
         };
       testScript =
         { nodes, ... }:
@@ -1595,7 +1623,6 @@ in
               return machine.succeed("su - alice -c 'bash -i -c true' 2>/dev/null")
 
           machine.wait_for_unit("multi-user.target")
-          machine.succeed("systemctl stop nixos-upgrade.timer nixos-upgrade.service")
           machine.succeed("rm -f /var/lib/nixos-central/last-update")
           # An installed machine whose last update was 15 days ago.
           machine.succeed(
@@ -1608,7 +1635,8 @@ in
           with subtest("stale: notice with ages and upgrade hint"):
               out = terminal()
               assert "last successful update 15 days ago (running system installed 15 days ago, central revision committed 16 days ago)" in out, out
-              assert "Run nixos-central upgrade" in out, out
+              assert "Update with: nixos-central upgrade" in out, out
+              assert "nixos-upgrade" not in out and "daily" not in out, out
 
           with subtest("not in non-interactive shells"):
               out = machine.succeed("su - alice -c 'bash -c true' 2>&1")
@@ -1621,21 +1649,19 @@ in
               )
               out = terminal()
               assert "last successful update 8 days ago" in out and "reboot" in out, out
+              assert "nixos-central upgrade" in out, out
 
-          with subtest("failed upgrade is not recorded"):
-              machine.fail("systemctl start nixos-upgrade.service")
-              machine.fail("test -e /var/lib/nixos-central/last-update")
-              assert "last successful update 8 days ago" in terminal()
-
-          with subtest("successful upgrade is recorded: no notice"):
-              machine.succeed("touch /tmp/upgrade-ok", "systemctl start nixos-upgrade.service")
-              machine.succeed("test -e /var/lib/nixos-central/last-update")
+          # nixos-central upgrade touches the stamp after every successful run.
+          with subtest("default threshold of 1 day"):
+              machine.succeed("mkdir -p /var/lib/nixos-central && touch -d '2 days ago' /var/lib/nixos-central/last-update")
+              assert "last successful update 2 days ago" in terminal()
+              machine.succeed("touch -d '20 hours ago' /var/lib/nixos-central/last-update")
               out = terminal()
               assert "nixos-central" not in out, out
 
           with subtest("run by hand: printed although recent"):
               out = machine.succeed("su - alice -c 'nixos-central status'")
-              assert "last successful update today" in out, out
+              assert "last successful update today" in out and "nixos-central upgrade" in out, out
         '';
     };
 
@@ -1690,7 +1716,7 @@ in
 
           machine.wait_for_unit("multi-user.target")
           machine.succeed("systemctl list-timers nixos-central-gc.timer | grep nixos-central-gc")
-          machine.succeed("systemctl stop nixos-upgrade.timer nixos-central-gc.timer")
+          machine.succeed("systemctl stop nixos-central-gc.timer")
           real = machine.succeed("readlink -f /run/booted-system").strip()
 
           # The installed system (booted and running), 60 days old.

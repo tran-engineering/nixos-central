@@ -1,6 +1,6 @@
-# nixos-central upgrade: install the latest central configuration right away.
-# Same update as the daily auto-upgrade, but activated now (switch) instead of
-# only staged for the next boot. Never reboots.
+# nixos-central upgrade: install the latest central configuration right away
+# (switch, also the default for the next boot). The only way a machine is
+# updated; nothing upgrades it automatically. Never reboots.
 {
   config,
   lib,
@@ -14,7 +14,6 @@ let
       config.system.build.nixos-rebuild
       config.nix.package
       pkgs.coreutils
-      config.systemd.package
       pkgs.nix-output-monitor # build progress (build_with_progress)
     ];
     text = ''
@@ -44,14 +43,6 @@ let
         # sudo resets the environment; keep what decides the build display.
         exec sudo env NIXOS_CENTRAL_PLAIN="''${NIXOS_CENTRAL_PLAIN:-}" TERM="''${TERM:-dumb}" "$0" "$@"
       fi
-
-      # A running oneshot is "activating", which `systemctl is-active` reports as inactive.
-      case "$(systemctl show --property=ActiveState --value nixos-upgrade.service)" in
-        active | activating | reloading)
-          echo "An automatic upgrade is running right now; try again when it has finished (journalctl -fu nixos-upgrade)." >&2
-          exit 1
-          ;;
-      esac
 
       # The lock file is updated before building; put it back if the
       # upgrade fails before a new generation was installed.

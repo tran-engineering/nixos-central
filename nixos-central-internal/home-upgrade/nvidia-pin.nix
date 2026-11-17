@@ -1,8 +1,7 @@
 # Keeps the NVIDIA driver recorded in a standalone home's flake (the `nvidia = …;`
 # line home-only.sh writes) in step with the driver loaded on the host, so Nix
 # programs keep matching the kernel module after the distribution updates it.
-# Used by `nixos-central upgrade` and the daily home-manager-auto-upgrade before
-# they build. Never fails: every problem is a warning and the old pin stays.
+# Used by `nixos-central upgrade` before it builds. Never fails: every problem is a warning and the old pin stays.
 # NIXOS_CENTRAL_NVIDIA_* are only set by tests.
 {
   writeShellApplication,

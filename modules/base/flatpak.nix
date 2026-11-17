@@ -7,9 +7,8 @@
 let
   flatpak = config.services.flatpak.package;
 
-  # Same schedule as the NixOS upgrade (auto-upgrade.nix), but separate from
-  # it: a Flatpak failure never fails the system upgrade, and updated apps are
-  # used from their next start, without a reboot. Flatpak deploys atomically,
+  # Daily, independent of system upgrades (which only run with
+  # nixos-central upgrade): updated apps are used from their next start, without a reboot. Flatpak deploys atomically,
   # so a failed or offline run leaves the installed versions in place.
   # Also once per start of the service manager (boot for the system, first
   # login for a user), a few minutes in: not wanted by multi-user.target
