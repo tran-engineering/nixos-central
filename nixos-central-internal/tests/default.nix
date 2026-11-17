@@ -1209,6 +1209,9 @@ in
               assert "The latest update is active." in out, out
               assert machine.succeed("md5sum ~alice/home-ok/flake.lock") == lock, "central unchanged"
               assert int(machine.succeed(f"stat -c %Y {stamp}")) > 0, "stamp touched"
+              # The stamp holds the completion time, and no temporary file is left.
+              machine.succeed(f"grep -Eq '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}T[0-9:]+[+-]' {stamp}")
+              machine.fail(f"test -e {stamp}.tmp")
         '';
       };
 
@@ -1555,12 +1558,27 @@ in
           [ ! -s stderr ] && [ "$(cat status)" = 0 ] || { cat stderr; echo "exit status $(cat status)"; exit 1; }
         }
 
-        # stale: all three ages and the update command
+        # local time of an epoch, as the notice prints it
+        at() { date -d "@$1" '+%Y-%m-%d %H:%M'; }
+
+        # stale: all three ages and the update command. The stamp holds no
+        # timestamp here (touch only), so its modification time is the update.
         touch -h -d @$((now - 15 * day)) p/home-manager-2-link
         touch -d @$((now - 9 * day)) stamp
-        expect "nixos-central: last successful update 9 days ago (home configuration installed 15 days ago, central revision committed 16 days ago).
+        expect "nixos-central: last successful update $(at $((now - 9 * day))) (9 days ago) (home configuration installed 15 days ago, central revision committed 16 days ago).
         Update with: nixos-central upgrade" "$(notice)"
         if notice | grep -q 'auto-upgrade\|daily'; then echo "mentions an automatic update"; exit 1; fi
+
+        # the time recorded in the stamp is used, not its modification time
+        echo "$(date -Iseconds -d @$((now - 3 * day)))" > stamp
+        touch -d @$((now - 9 * day)) stamp
+        expect "nixos-central: last successful update $(at $((now - 3 * day))) (3 days ago) (home configuration installed 15 days ago, central revision committed 16 days ago).
+        Update with: nixos-central upgrade" "$(notice)"
+        # a stamp without a timestamp falls back to its modification time
+        echo "not a time" > stamp
+        touch -d @$((now - 9 * day)) stamp
+        expect "nixos-central: last successful update $(at $((now - 9 * day))) (9 days ago) (home configuration installed 15 days ago, central revision committed 16 days ago).
+        Update with: nixos-central upgrade" "$(notice)"
 
         # threshold set by the profile
         expect "" "$(NIXOS_CENTRAL_NOTICE_DAYS=14 notice)"
@@ -1568,7 +1586,7 @@ in
 
         # default threshold of 1 day: 2 days prints, 20 hours and exactly a day don't
         touch -d @$((now - 2 * day)) stamp
-        expect "nixos-central: last successful update 2 days ago (home configuration installed 15 days ago, central revision committed 16 days ago).
+        expect "nixos-central: last successful update $(at $((now - 2 * day))) (2 days ago) (home configuration installed 15 days ago, central revision committed 16 days ago).
         Update with: nixos-central upgrade" "$(notice)"
         touch -d @$((now - 20 * 3600)) stamp
         expect "" "$(notice)"
@@ -1576,9 +1594,9 @@ in
         expect "" "$(notice)"
 
         # run by hand: printed although recent, and although turned off
-        expect "nixos-central: last successful update 1 day ago (home configuration installed 15 days ago, central revision committed 16 days ago).
+        expect "nixos-central: last successful update $(at $((now - day))) (1 day ago) (home configuration installed 15 days ago, central revision committed 16 days ago).
         Update with: nixos-central upgrade" "$(manual)"
-        expect "nixos-central: last successful update 1 day ago (home configuration installed 15 days ago, central revision committed 16 days ago)." \
+        expect "nixos-central: last successful update $(at $((now - day))) (1 day ago) (home configuration installed 15 days ago, central revision committed 16 days ago)." \
           "$(NIXOS_CENTRAL_NOTICE_DAYS=0 manual | head -1)"
 
         # recent generation (manual switch), although the recorded update is old
@@ -1588,7 +1606,7 @@ in
 
         # unreadable lock file: central age left out
         touch -h -d @$((now - 15 * day)) p/home-manager-2-link
-        expect "nixos-central: last successful update 9 days ago (home configuration installed 15 days ago)." \
+        expect "nixos-central: last successful update $(at $((now - 9 * day))) (9 days ago) (home configuration installed 15 days ago)." \
           "$(NIXOS_CENTRAL_NOTICE_LOCK=$PWD/missing notice | head -1)"
 
         # nothing known: silent, by hand "unknown"

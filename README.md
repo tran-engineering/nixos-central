@@ -188,7 +188,7 @@ Run by hand:
 nixos-central upgrade             # update now (central, and your private overlay if any)
 nixos-central upgrade --private   # update only the private overlay
 nixos-central diff                # packages the last update changed
-nixos-central status              # when the last update succeeded, how old things are
+nixos-central status              # when the last update succeeded (date and time on standalone homes), how old things are
 home-manager generations          # then run <generation path>/activate to roll back
 ```
 
@@ -719,7 +719,8 @@ it needs a branch.
   `nixos-central upgrade` counts even if nothing changed, so a quiet repository
   causes no notice. Homes on
   [other distributions](#install-on-another-linux-distribution) get the same
-  notice. `nixos-central status` shows the same at any time. Change the
+  notice. `nixos-central status` shows the same at any time; on a standalone
+  home it also gives the local date and time of the last successful update. Change the
   number of days in your profile, `0` turns the terminal notice off:
 
   ```nix

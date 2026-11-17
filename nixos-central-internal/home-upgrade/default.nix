@@ -97,10 +97,15 @@ writeShellApplication {
       exit 1
     fi
 
-    # Seen by the update notice, also when nothing changed.
+    # Seen by the update notice, also when nothing changed. The stamp holds the
+    # completion time (ISO 8601 with offset), written to a temporary file and
+    # moved into place; its modification time is set to the same moment.
     stamp=${lib.escapeShellArg stamp}
     mkdir -p "$(dirname "$stamp")"
-    touch "$stamp"
+    stamp_tmp=$stamp.tmp
+    date -Iseconds > "$stamp_tmp"
+    mv -f "$stamp_tmp" "$stamp"
+    touch -d "$(cat "$stamp")" "$stamp"
 
     echo
     echo "The latest update is active."

@@ -6,7 +6,10 @@
 # hand (`nixos-central status`), it always prints it. Successful
 # `nixos-central upgrade` runs are recorded by modules/base/upgrade.nix (NixOS)
 # and home-upgrade (standalone); a newer generation counts too (manual
-# rebuilds, fresh installs).
+# rebuilds, fresh installs). A standalone home's home-upgrade stores the time
+# of its last successful upgrade as an ISO 8601 timestamp in the stamp file;
+# the notice reads it (falling back to the file's modification time) and prints
+# it in local time.
 {
   config,
   lib,
@@ -78,6 +81,19 @@ let
 
       last=0
       if [ -e "$stamp" ]; then last=$(mtime "$stamp" || echo 0); fi
+    ''
+    + lib.optionalString cfg.standalone ''
+      # A standalone home's stamp holds the time of its last upgrade; use it
+      # when it is a timestamp, else keep the modification time.
+      if [ -e "$stamp" ]; then
+        recorded=$(head -n 1 "$stamp" 2>/dev/null || true)
+        if [ -n "$recorded" ]; then
+          recorded=$(date -d "$recorded" +%s 2>/dev/null || true)
+          if [ -n "$recorded" ] && [ "$recorded" -gt 0 ] 2>/dev/null; then last=$recorded; fi
+        fi
+      fi
+    ''
+    + ''
 
       # Newest generation: the link the profile points to (relative or absolute).
       if [ -L "$profile" ]; then
@@ -108,7 +124,15 @@ let
 
       joined=""
       for d in "''${details[@]}"; do joined="''${joined:+$joined, }$d"; done
-      if [ "$last" -gt 0 ]; then when=$(ago "$last"); else when="unknown"; fi
+      if [ "$last" -gt 0 ]; then
+        when=$(ago "$last")
+    ''
+    + lib.optionalString cfg.standalone ''
+        # Local time of the update, before its age.
+        when="$(date -d "@$last" '+%Y-%m-%d %H:%M' 2>/dev/null || true) ($when)"
+    ''
+    + ''
+      else when="unknown"; fi
       echo "nixos-central: last successful update $when''${joined:+ ($joined)}."
       echo "$hint"
     '';
