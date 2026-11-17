@@ -57,21 +57,6 @@ A standalone home SHALL make graphical programs from the central repository use 
 - **WHEN** the user declines the GPU setup
 - **THEN** the home is still activated, and the user is told how to run the setup later
 
-### Requirement: Daily automatic home upgrade
-Each standalone home SHALL check daily for a newer revision of the central repository, update only the `central` input of its local flake and, if declared, the `private` input, and activate the result for the user. A run missed while the machine was off MUST run soon after the user is next logged in.
-
-#### Scenario: Update available
-- **WHEN** the central repository has new commits and the daily upgrade runs
-- **THEN** `central` in `~/.config/home-manager/flake.lock` points to the new revision and the new home is active
-
-#### Scenario: Build fails
-- **WHEN** the new configuration fails to build
-- **THEN** the previously active home stays active
-
-#### Scenario: Overlay updated
-- **WHEN** the home declares a private overlay with new commits and the daily upgrade runs
-- **THEN** `private` in the lock file points to the new revision and its changes are active
-
 ### Requirement: Rollback to the previous home
 Previous home generations SHALL remain available so the user can switch back to the last working one if an update is broken.
 
@@ -113,13 +98,6 @@ Each standalone home SHALL provide a subcommand `nixos-central upgrade`, run as 
 - **WHEN** the home declares no private overlay and the user runs `nixos-central upgrade --private`
 - **THEN** the command fails with an error saying the home has no private overlay, and changes nothing
 
-### Requirement: No concurrent home upgrades
-`nixos-central upgrade` on a standalone home MUST refuse to start while the daily automatic home upgrade is running, with an error that says so, and MUST change nothing in that case.
-
-#### Scenario: Automatic upgrade in progress
-- **WHEN** the user runs `nixos-central upgrade` while the daily automatic home upgrade is running
-- **THEN** the command exits with an error explaining that an upgrade is already in progress, and the active home and lock file are unchanged
-
 ### Requirement: Showing what the last home update changed
 Each standalone home SHALL provide a subcommand `nixos-central diff`, run as the user without root, that lists the packages added, removed and changed in version from the previous home generation to the current one, names both generation numbers, and changes nothing.
 
@@ -135,16 +113,23 @@ Each standalone home SHALL provide a subcommand `nixos-central diff`, run as the
 - **WHEN** the user runs `nixos-central diff` with any argument
 - **THEN** the command prints its usage, exits with an error and changes nothing
 
-### Requirement: NVIDIA pin follows the host driver
-Before building, `nixos-central upgrade` (with or without `--private`) and the daily automatic home upgrade SHALL compare the NVIDIA driver loaded on the host with the version recorded in the local flake. If the flake records a driver and the versions differ, they SHALL record the loaded version and its hash in the flake. They MUST NOT add or remove a recorded driver, and MUST NOT need `--impure`.
+### Requirement: No automatic home upgrades
+A standalone home MUST NOT update its flake inputs or activate a new home on its own. The `central` and `private` inputs in `~/.config/home-manager/flake.lock` SHALL change only when the user runs `nixos-central upgrade` or edits the flake.
+
+#### Scenario: New commits in the central repository
+- **WHEN** the central repository has new commits and the user stays logged in for several days without running `nixos-central upgrade`
+- **THEN** `~/.config/home-manager/flake.lock` and the active home are unchanged
+
+#### Scenario: Home installed before this change
+- **WHEN** a home that had the daily `home-manager-auto-upgrade` timer runs `nixos-central upgrade` into a configuration with this change
+- **THEN** the timer no longer exists afterwards
+
+### Requirement: Upgrade keeps the NVIDIA pin in step with the host
+Before building, `nixos-central upgrade` (with or without `--private`) SHALL compare the NVIDIA driver loaded on the host with the version recorded in the local flake. If the flake records a driver and the versions differ, it SHALL record the loaded version and its hash in the flake. It MUST NOT add or remove a recorded driver, and MUST NOT need `--impure`.
 
 #### Scenario: Host driver updated
 - **WHEN** the local flake records NVIDIA driver 615.78.08, the host has loaded 620.70.06, and the user runs `nixos-central upgrade`
 - **THEN** `~/.config/home-manager/flake.nix` records version 620.70.06 with its hash, and the activated home uses that driver
-
-#### Scenario: Daily upgrade after a driver update
-- **WHEN** the host's loaded NVIDIA driver differs from the recorded one and the daily automatic home upgrade runs
-- **THEN** the flake records the loaded driver and its hash before the new home is built
 
 #### Scenario: Driver unchanged
 - **WHEN** the recorded NVIDIA driver version equals the loaded one
@@ -166,8 +151,8 @@ Before building, `nixos-central upgrade` (with or without `--private`) and the d
 - **WHEN** the versions differ but the local flake does not contain exactly one `nvidia = …;` line as written by the home installer
 - **THEN** a warning says the driver must be updated by hand, the flake is not modified, and the upgrade continues
 
-### Requirement: Upgrade sets up changed GPU drivers
-After `nixos-central upgrade` activates a home whose GPU drivers differ from those the system-wide GPU setup points to, it SHALL run that setup with `sudo` when its input and output are a terminal, and otherwise print the command to run. The daily automatic home upgrade MUST NOT run anything as root.
+### Requirement: Upgrade runs the GPU setup for changed drivers
+After `nixos-central upgrade` activates a home whose GPU drivers differ from those the system-wide GPU setup points to, it SHALL run that setup with `sudo` when its input and output are a terminal, and otherwise print the command to run.
 
 #### Scenario: Drivers changed, interactive
 - **WHEN** the user runs `nixos-central upgrade` in a terminal and the activated home's GPU drivers differ from the system-wide setup
@@ -184,7 +169,3 @@ After `nixos-central upgrade` activates a home whose GPU drivers differ from tho
 #### Scenario: Drivers unchanged
 - **WHEN** the system-wide GPU setup already points to the activated home's drivers
 - **THEN** the command does not run or mention the GPU setup
-
-#### Scenario: Daily upgrade with changed drivers
-- **WHEN** the daily automatic home upgrade activates a home whose GPU drivers differ from the system-wide setup
-- **THEN** it logs the GPU setup command and runs nothing as root

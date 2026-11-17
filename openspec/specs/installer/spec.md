@@ -224,7 +224,7 @@ When an overlay was set up, the installed system SHALL be built with the overlay
 
 #### Scenario: First boot with overlay
 - **WHEN** the machine installed with an overlay boots and the primary user logs in
-- **THEN** the overlay's files are present, and the daily upgrade can fetch the overlay with the installed key
+- **THEN** the overlay's files are present, and `nixos-central upgrade` can fetch the overlay with the installed key
 
 #### Scenario: Remove after install
 - **WHEN** the primary user runs `nixos-central private remove` on a machine installed with an overlay and profile

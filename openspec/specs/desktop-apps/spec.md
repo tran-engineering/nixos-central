@@ -50,11 +50,15 @@ On graphical machines, installed Flatpak apps and runtimes SHALL be updated auto
 - **THEN** the installed apps stay as they are and keep working
 
 ### Requirement: Flatpak apps are independent of system generations
-Flatpak apps SHALL stay installed and usable across system upgrades and across booting an older system generation. They are not part of the repository's configuration: the automatic NixOS upgrade MUST NOT install or remove Flatpak apps.
+Flatpak apps SHALL stay installed and usable across system upgrades and across booting an older system generation. They are not part of the repository's configuration: a system upgrade MUST NOT install or remove Flatpak apps.
 
 #### Scenario: Boot an older generation
 - **WHEN** a user with installed Flatpak apps boots the previous system generation from the boot menu
 - **THEN** the same Flatpak apps are installed and start
+
+#### Scenario: Upgrade keeps apps
+- **WHEN** a user with installed Flatpak apps runs `nixos-central upgrade`
+- **THEN** the same Flatpak apps are installed afterwards
 
 ### Requirement: AppImages run directly
 On every graphical machine, a user SHALL be able to start an AppImage (type 1 or type 2) by executing the file, without installing anything and without a wrapper command. Machines with desktop `none` MUST NOT get this.

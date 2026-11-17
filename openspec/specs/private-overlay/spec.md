@@ -82,19 +82,12 @@ The system SHALL provide a subcommand `nixos-central private setup [<flake-url>]
 - **WHEN** a standalone home declares an overlay and records profile `kt`, and its user runs `nixos-central private remove`
 - **THEN** `~/.config/home-manager/flake.nix` declares neither the overlay nor a profile, and the home builds with the base configuration, without a warning
 
-### Requirement: Unattended upgrades can fetch the overlay
-On NixOS machines, the automatic upgrade SHALL fetch the overlay with the primary user's SSH key without user interaction. GitHub's host keys SHALL be known in advance, so no host-key prompt can block a fetch.
-
-#### Scenario: Daily upgrade with overlay
-- **WHEN** the overlay repository has new commits and the daily upgrade runs while nobody is logged in
-- **THEN** the staged generation contains the new overlay revision
-
 ### Requirement: Overlay failures stop updates instead of dropping the overlay
 If a machine with an overlay can't fetch it, every upgrade MUST fail without changing the running system, the boot entries or the lock file. A configuration without the overlay MUST NOT be built in its place.
 
 #### Scenario: Key revoked
-- **WHEN** the SSH key is no longer accepted by GitHub and the daily upgrade runs
-- **THEN** the upgrade fails, the overlay's files stay in place, and the failure is visible in the upgrade service's status
+- **WHEN** the SSH key is no longer accepted by GitHub and the user runs `nixos-central upgrade`
+- **THEN** the upgrade fails with an error, the overlay's files stay in place, and the running system, the boot entries and the lock file are unchanged
 
 ### Requirement: Overlays select shared modules by name
 An overlay's modules SHALL be able to include any shared home module of the central repository by its name, without a path into the central repository. The set of names is an interface of the central repository; renaming or removing a name MUST be announced as breaking.
@@ -128,3 +121,10 @@ The flake URL that `nixos-central private setup` uses when none is given SHALL d
 #### Scenario: Unknown action
 - **WHEN** a user runs `nixos-central private frobnicate`
 - **THEN** the command prints the usage, exits with an error and changes nothing
+
+### Requirement: Upgrades as root can fetch the overlay
+On NixOS machines, `nixos-central upgrade` SHALL fetch the overlay as root with the primary user's SSH key. GitHub's host keys SHALL be known in advance, so no host-key prompt can block a fetch.
+
+#### Scenario: Upgrade with overlay
+- **WHEN** the overlay repository has new commits and the primary user runs `nixos-central upgrade`
+- **THEN** the activated generation contains the new overlay revision, and no host-key prompt is shown

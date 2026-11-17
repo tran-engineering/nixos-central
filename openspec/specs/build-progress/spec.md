@@ -61,10 +61,3 @@ The installer's log file SHALL contain the complete build log, including any bui
 #### Scenario: Install with live display
 - **WHEN** an installation on the console showed the live display
 - **THEN** `/tmp/nixos-central-install.log` contains the build's log messages, including any build error, and no screen-redraw sequences
-
-### Requirement: Automatic upgrades unchanged
-The daily automatic upgrades of NixOS machines and standalone homes MUST NOT use the live display. Their journal output SHALL stay as it is.
-
-#### Scenario: Daily upgrade
-- **WHEN** the daily automatic upgrade runs
-- **THEN** its journal shows the build's normal log lines

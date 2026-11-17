@@ -2,37 +2,15 @@
 
 ## Purpose
 
-Keeps every installed machine in sync with the central repository automatically and safely, and lets users try unmerged changes without risking their system.
+Lets users update every installed machine to the central repository safely, when they choose to, and try unmerged changes without risking their system.
 
 ## Requirements
-
-### Requirement: Daily automatic upgrade staged for next boot
-Each machine SHALL check daily for a newer revision of the central repository, update its `central` input and, if declared, its `private` input, and build the result as the default boot entry without activating it in the running system. A run missed while the machine was off MUST run soon after the machine is next online.
-
-#### Scenario: Update available
-- **WHEN** the central repository has new commits and the daily upgrade runs
-- **THEN** a new generation becomes the default boot entry while the running system stays unchanged
-
-#### Scenario: Machine was off at scheduled time
-- **WHEN** a laptop was powered off during the scheduled upgrade time
-- **THEN** the upgrade runs shortly after the laptop is next booted
-
-#### Scenario: Overlay updated
-- **WHEN** a machine declares a private overlay that has new commits and the daily upgrade runs
-- **THEN** the staged generation contains the new overlay revision
-
-### Requirement: No automatic reboot
-The automatic upgrade MUST NOT reboot the machine.
-
-#### Scenario: Kernel changed
-- **WHEN** an upgrade includes a new kernel
-- **THEN** the machine is not rebooted automatically
 
 ### Requirement: Reboot-pending notification
 When the default boot generation differs from the running system, the logged-in desktop user SHALL receive a desktop notification that an update is ready and will apply on reboot, and that `nixos-central diff` shows what it changes. The notification MUST not repeat more than once per new generation per session.
 
 #### Scenario: Update staged
-- **WHEN** an automatic upgrade has staged a new generation
+- **WHEN** a new generation has been made the default boot entry without activating it, e.g. with `nixos-rebuild boot`
 - **THEN** the desktop user sees "Update ready – reboot when convenient" once, with a body that mentions `nixos-central diff`
 
 #### Scenario: After reboot
@@ -66,7 +44,7 @@ The system SHALL provide a subcommand `nixos-central try <branch>` that activate
 - **THEN** the command prints its usage, exits with an error and changes nothing
 
 ### Requirement: Upgrading immediately on demand
-The system SHALL provide a subcommand `nixos-central upgrade` that updates the `central` input in `/etc/nixos`, and the `private` input if declared, to their latest revisions, activates the result in the running system, and makes it the default boot entry. It MUST update no other input and MUST NOT reboot the machine.
+The system SHALL provide a subcommand `nixos-central upgrade` that updates the `central` input in `/etc/nixos`, and the `private` input if declared, to their latest revisions, activates the result in the running system, and makes it the default boot entry. It MUST update no other input and MUST NOT reboot the machine. It is the only way a machine is updated to newer revisions of the central repository.
 
 #### Scenario: Update available
 - **WHEN** the central repository has new commits and a user runs `nixos-central upgrade`
@@ -96,15 +74,8 @@ The system SHALL provide a subcommand `nixos-central upgrade` that updates the `
 - **WHEN** the configuration fails to build, or the central repository or the private overlay cannot be fetched
 - **THEN** the command fails with an error, and the running system, the default boot entry and `/etc/nixos/flake.lock` are unchanged
 
-### Requirement: No concurrent upgrades
-`nixos-central upgrade` MUST refuse to start while the automatic upgrade is running, with an error that says so, and MUST change nothing in that case.
-
-#### Scenario: Automatic upgrade in progress
-- **WHEN** a user runs `nixos-central upgrade` while the daily automatic upgrade is running
-- **THEN** the command exits with an error explaining that an upgrade is already in progress, and the system is unchanged
-
 ### Requirement: Upgrading only the overlay on demand
-`nixos-central upgrade --private` SHALL update only the `private` input in `/etc/nixos` to its latest revision, activate the result in the running system and make it the default boot entry; `central` MUST stay at its locked revision. It MUST NOT reboot the machine, and it MUST refuse to start while the automatic upgrade is running, like `nixos-central upgrade`.
+`nixos-central upgrade --private` SHALL update only the `private` input in `/etc/nixos` to its latest revision, activate the result in the running system and make it the default boot entry; `central` MUST stay at its locked revision. It MUST NOT reboot the machine.
 
 #### Scenario: Overlay changed, central changed too
 - **WHEN** both the central repository and the overlay have new commits and a user runs `nixos-central upgrade --private`
@@ -122,7 +93,7 @@ The system SHALL provide a subcommand `nixos-central upgrade` that updates the `
 The system SHALL provide a subcommand `nixos-central diff`, usable by any user without root, that lists the packages added, removed and changed in version between two system generations and changes nothing. While an update is staged, it MUST compare the running system with the staged generation; otherwise the newest generation with the one before it. The output MUST say which of the two it compares.
 
 #### Scenario: Update staged
-- **WHEN** the daily upgrade has staged a new generation and a user runs `nixos-central diff`
+- **WHEN** a new generation is the default boot entry but not running (e.g. after `nixos-rebuild boot`) and a user runs `nixos-central diff`
 - **THEN** the command lists the package changes from the running system to the staged generation and says they apply on the next reboot
 
 #### Scenario: Update already in use
@@ -151,3 +122,14 @@ When `nixos-central upgrade` activates a configuration whose kernel is unchanged
 #### Scenario: Kernel modules unchanged
 - **WHEN** `nixos-central upgrade` activates a configuration with the same kernel and kernel modules as the booted system
 - **THEN** the command prints no reboot hint
+
+### Requirement: No automatic upgrades
+A NixOS machine MUST NOT update its flake inputs, build a new system or stage a new boot entry on its own. The `central` and `private` inputs in `/etc/nixos/flake.lock` SHALL change only when a user runs `nixos-central upgrade` or edits the flake. The machine MUST NOT reboot itself to apply an update.
+
+#### Scenario: New commits in the central repository
+- **WHEN** the central repository has new commits and the machine stays on for several days without anyone running `nixos-central upgrade`
+- **THEN** `/etc/nixos/flake.lock`, the running system and the default boot entry are unchanged
+
+#### Scenario: No upgrade timer
+- **WHEN** a user lists the machine's systemd timers
+- **THEN** there is no timer that upgrades the system

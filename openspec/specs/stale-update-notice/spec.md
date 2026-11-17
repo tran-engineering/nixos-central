@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Tells a user in a new terminal when their machine or standalone home has not managed to update for a while, so silently stopped updates get noticed, while machines that update normally show nothing.
+Reminds a user in a new terminal how long ago their machine or standalone home was last updated, and shows the command to update, once that is more than a threshold ago; recently updated machines show nothing.
 
 ## Requirements
 
@@ -10,11 +10,11 @@ Tells a user in a new terminal when their machine or standalone home has not man
 When the user starts an interactive bash, fish or zsh shell and the last successful update is older than the threshold, the shell SHALL print a notice. While the last successful update is within the threshold, nothing MUST be printed, however old the running system or the central revision are. This applies to every profile, on NixOS machines and standalone homes.
 
 #### Scenario: Updates failing for a while
-- **WHEN** the last successful update was 9 days ago, the threshold is 7 days, and the user opens a terminal
+- **WHEN** the last successful update was 9 days ago, the threshold is 1 day, and the user opens a terminal
 - **THEN** the shell prints a notice saying the last successful update was 9 days ago
 
 #### Scenario: Updating normally, quiet repository
-- **WHEN** the daily upgrade succeeded yesterday, but the central repository has had no commits for 12 days
+- **WHEN** the user ran `nixos-central upgrade` 3 hours ago, but the central repository has had no commits for 12 days
 - **THEN** opening a terminal prints no notice
 
 #### Scenario: Profile without shared shell modules
@@ -22,18 +22,22 @@ When the user starts an interactive bash, fish or zsh shell and the last success
 - **THEN** the notice is printed
 
 ### Requirement: Last successful update
-The last successful update SHALL be the later of: the most recent successful completion of the daily automatic upgrade or of `nixos-central upgrade` on NixOS, or of the home-manager automatic upgrade on a standalone home, whether or not it changed anything; and the time the newest generation was installed (which also covers manual rebuilds and the installation).
+The last successful update SHALL be the later of: the most recent successful completion of `nixos-central upgrade` (with or without `--private`, on NixOS or a standalone home), whether or not it changed anything; and the time the newest generation was installed (which also covers manual rebuilds and the installation).
 
 #### Scenario: Upgrade without changes
-- **WHEN** the daily upgrade succeeds but produces the same system as before
+- **WHEN** the user runs `nixos-central upgrade` successfully but it produces the same system or home as before
+- **THEN** it counts as the last successful update
+
+#### Scenario: Upgrade without changes on a standalone home
+- **WHEN** the user of a standalone home runs `nixos-central upgrade` successfully and no new home generation is created
 - **THEN** it counts as the last successful update
 
 #### Scenario: Failed upgrade
-- **WHEN** the daily upgrade fails, e.g. because the machine is offline or the build fails
+- **WHEN** `nixos-central upgrade` fails, e.g. because the machine is offline or the build fails
 - **THEN** the last successful update stays at the previous successful run
 
 #### Scenario: Manual switch on a standalone home
-- **WHEN** the home-manager auto-upgrade has failed for 10 days, and the user ran `home-manager switch` with a changed configuration today
+- **WHEN** the last `nixos-central upgrade` was 10 days ago, and the user ran `home-manager switch` with a changed configuration today
 - **THEN** the last successful update is today
 
 #### Scenario: No upgrade recorded yet
@@ -48,26 +52,34 @@ The notice SHALL state, in whole days, how long ago the last successful update w
 - **THEN** the notice states 9, 15 and 16 days respectively
 
 #### Scenario: Update staged but not rebooted
-- **WHEN** the daily upgrade staged a new generation, but the running system was installed 10 days ago
+- **WHEN** a new generation was made the default boot entry without activating it, but the running system was installed 10 days ago
 - **THEN** the running system's age is reported as 10 days
 
 ### Requirement: Actionable hint
-The notice SHALL include what to do: if a newer system generation is already staged, to reboot; otherwise on NixOS to run `nixos-central upgrade` or look at the upgrade's log, and on a standalone home how to check the home-manager auto-upgrade.
-
-#### Scenario: Staged update waiting
-- **WHEN** the notice is printed and a newer generation is the default boot entry
-- **THEN** the notice tells the user to reboot to use it
+The notice SHALL show the command that installs the latest update, `nixos-central upgrade`, on NixOS machines and standalone homes. If a newer system generation is already staged, it SHALL additionally say to reboot to use it. The notice MUST NOT refer to an automatic or daily update.
 
 #### Scenario: Nothing staged on NixOS
 - **WHEN** the notice is printed on a NixOS machine and no newer generation is staged
-- **THEN** the notice suggests running `nixos-central upgrade`
+- **THEN** the notice shows `nixos-central upgrade` as the command to update
+
+#### Scenario: Staged update waiting
+- **WHEN** the notice is printed and a newer generation is the default boot entry
+- **THEN** the notice tells the user to reboot to use it, and also shows `nixos-central upgrade`
 
 #### Scenario: Standalone home
 - **WHEN** the notice is printed on a standalone home
-- **THEN** the notice tells the user how to check the home-manager auto-upgrade
+- **THEN** the notice shows `nixos-central upgrade` as the command to update, and does not mention `home-manager-auto-upgrade`
 
 ### Requirement: Threshold set by the profile
-The threshold SHALL default to 7 days. A profile SHALL be able to change it, or turn the notice off entirely.
+The threshold SHALL default to 1 day. A profile SHALL be able to change it, or turn the notice off entirely.
+
+#### Scenario: Default threshold
+- **WHEN** the profile does not set a threshold and the last successful update was 2 days ago
+- **THEN** a new terminal prints the notice
+
+#### Scenario: Within the default threshold
+- **WHEN** the profile does not set a threshold and the last successful update was 20 hours ago
+- **THEN** a new terminal prints no notice
 
 #### Scenario: Longer threshold
 - **WHEN** profile `kt` sets the threshold to 14 days and the last successful update was 10 days ago

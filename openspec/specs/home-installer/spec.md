@@ -91,11 +91,11 @@ When the first activation would replace a file in the home directory that is not
 - **THEN** the original is kept as `~/.bashrc.backup` and the profile's version is active
 
 ### Requirement: Home installer produces a centrally managed home
-The home installer SHALL write the local flake (see `home-configuration`), activate it with the home-manager version pinned by the central repository, offer the one-time GPU setup, and print a summary: login name, automatic updates, how to update manually, and how to add a private overlay with a profile. It MUST NOT change the user's login shell; if the activated configuration selects a different shell than the current login shell, it SHALL print how to change it.
+The home installer SHALL write the local flake (see `home-configuration`), activate it with the home-manager version pinned by the central repository, offer the one-time GPU setup, and print a summary: login name, how to update (`nixos-central upgrade`), and how to add a private overlay with a profile. It MUST NOT change the user's login shell; if the activated configuration selects a different shell than the current login shell, it SHALL print how to change it.
 
 #### Scenario: Successful install
 - **WHEN** the home installer completes
-- **THEN** the base configuration's programs are available in a new login session, the daily upgrade is scheduled, and the summary is printed, including the `nixos-central private setup` command
+- **THEN** the base configuration's programs are available in a new login session, no automatic upgrade is scheduled, and the summary is printed, including the `nixos-central upgrade` and `nixos-central private setup` commands
 
 #### Scenario: Profile uses fish
 - **WHEN** the activated configuration selects fish and the login shell is bash
